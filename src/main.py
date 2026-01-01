@@ -8,73 +8,132 @@ from utils import proceed_input, process_user_question
 load_dotenv()
 os.environ["GROQ_API_KEY"] = os.getenv("GROQ_API_KEY")
 
-# Create a directory to store Excels
+# Create a directory to store data files
 os.makedirs('../data', exist_ok=True)
 
 
-# Gradio app to process PDF and ask questions
 def gradio_app():
-    with gr.Blocks() as interface:
-        with gr.Row():
-            gr.Markdown("## Chat with Text, Docs, Excel and PDF ##")
-
-        with gr.Row():
-            text_input = gr.Textbox(label="Enter Text Paragraph", lines=10)
-            file_upload = gr.File(label="Upload Doc,Excel or PDF Files", file_types=[".xlsx", ".pdf", ".docx"], file_count="multiple")
-
-        with gr.Row():
-            process_btn = gr.Button("Process")
-
-        with gr.Row():
-            output_message = gr.Textbox(label="Status")
-
-        # State to persist across Gradio app runs (initialized to None)
+    """Enhanced Gradio app to chat with documents using RAG."""
+    
+    with gr.Blocks(title="Chat with Documents") as interface:
+        
+        # Header
+        gr.Markdown("# 📚 Chat with Your Documents")
+        gr.Markdown("Upload documents (PDF, DOCX, XLSX) or enter text, then ask questions!")
+        
+        # State to persist RAG chain across interactions
         rag_chain_state = gr.State(None)
-
-        # Chatbot interface
+        
+        # Input Section
+        with gr.Row():
+            with gr.Column(scale=1):
+                text_input = gr.Textbox(
+                    label="📝 Enter Text (Optional)", 
+                    lines=8,
+                    placeholder="Paste any text you want to include in the knowledge base..."
+                )
+                file_upload = gr.File(
+                    label="📁 Upload Documents", 
+                    file_types=[".xlsx", ".pdf", ".docx"], 
+                    file_count="multiple"
+                )
+                process_btn = gr.Button("🚀 Process Documents", variant="primary", size="lg")
+                output_message = gr.Textbox(label="Status", interactive=False)
+        
+        # Chat Section
+        gr.Markdown("### 💬 Chat Interface")
         chatbot = gr.Chatbot(
-            elem_id="chatbot", bubble_full_width=False, scale=1)
-        chat_input = gr.Textbox(
-            placeholder="Ask a question about the Input...", show_label=False)
+            elem_id="chatbot",
+            scale=1,
+            height=400
+        )
+        
+        with gr.Row():
+            chat_input = gr.Textbox(
+                placeholder="Ask a question about your documents...", 
+                show_label=False,
+                scale=4
+            )
+            clear_btn = gr.Button("🗑️ Clear", scale=1)
 
         def add_message(history, message):
-            # Add user message to chat history
-            if message is not None:
-                history.append([message, None])
-            return history, gr.Textbox(value=None, interactive=False)
+            """Add user message to chat history."""
+            if message and message.strip():
+                history.append({"role": "user", "content": message})
+            return history, gr.Textbox(value="", interactive=False)
 
         def process_input_gradio(text, files):
-            # Update state with processed input data
-            rag_chain = proceed_input(text, files)
-            return "Data processed. Now you can ask questions.", rag_chain, None
+            """Process uploaded documents and text."""
+            if not files and not text.strip():
+                return "⚠️ Please upload files or enter text before processing.", None, []
+            
+            try:
+                rag_chain = proceed_input(text, files)
+                return "✅ Documents processed successfully! You can now ask questions.", rag_chain, []
+            except Exception as e:
+                return f"❌ Error: {str(e)}", None, []
 
-        def ask_question_gradio(user_input, rag_chain_state):
-            # Use the state to process the question
-            rag_chain = rag_chain_state
-            if rag_chain is None:
-                return "Please upload and process input first."
-            return process_user_question(user_input, rag_chain)
-
-        def bot(history, rag_chain_state):
-            # Get the bot's response and update the chat history
-            history[-1][1] = ask_question_gradio(
-                history[-1][0], rag_chain_state)
+        def bot_response(history, rag_chain_state):
+            """Generate bot response."""
+            if not history:
+                return history
+                
+            if rag_chain_state is None:
+                history.append({
+                    "role": "assistant", 
+                    "content": "⚠️ Please upload and process documents first."
+                })
+                return history
+            
+            # Get the last user message - handle both dict and list formats
+            last_message = history[-1]
+            if isinstance(last_message, dict):
+                user_message = last_message.get("content", "")
+            else:
+                user_message = str(last_message)
+            
+            # Ensure user_message is a string
+            if isinstance(user_message, list):
+                user_message = " ".join(str(item) for item in user_message)
+            elif not isinstance(user_message, str):
+                user_message = str(user_message)
+            
+            try:
+                # Get answer from RAG chain
+                answer = process_user_question(user_message, rag_chain_state)
+                history.append({"role": "assistant", "content": answer})
+            except Exception as e:
+                history.append({
+                    "role": "assistant", 
+                    "content": f"❌ Error processing question: {str(e)}"
+                })
+            
             return history
 
-        # Connect processing button to the input processing function
-        process_btn.click(fn=process_input_gradio, inputs=[text_input, file_upload], outputs=[
-            output_message, rag_chain_state, chatbot])
+        # Event handlers
+        process_btn.click(
+            fn=process_input_gradio, 
+            inputs=[text_input, file_upload], 
+            outputs=[output_message, rag_chain_state, chatbot]
+        )
 
-        # Clear the chat history and input
-        gr.ClearButton([chat_input, chatbot])
-
-        # Ask a question and get the bot's response
+        # Chat submission
         chat_msg = chat_input.submit(
-            add_message, [chatbot, chat_input], [chatbot, chat_input])
-        bot_msg = chat_msg.then(bot, [chatbot, rag_chain_state], chatbot)
+            fn=add_message, 
+            inputs=[chatbot, chat_input], 
+            outputs=[chatbot, chat_input]
+        )
+        bot_msg = chat_msg.then(
+            fn=bot_response, 
+            inputs=[chatbot, rag_chain_state], 
+            outputs=chatbot
+        )
         bot_msg.then(lambda: gr.Textbox(interactive=True), None, [chat_input])
 
-    interface.launch(server_name="0.0.0.0", server_port=7000)
+        # Clear button
+        clear_btn.click(lambda: [], None, chatbot)
+
+    interface.launch(server_name="0.0.0.0", server_port=7000, theme=gr.themes.Soft())
 
 
 # Run the Gradio app
