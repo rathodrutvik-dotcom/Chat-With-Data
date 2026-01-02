@@ -1,9 +1,10 @@
 import os
 from pathlib import Path
-import gradio as gr
 
+import gradio as gr
 from dotenv import load_dotenv
-from utils import proceed_input, process_user_question
+
+from rag.pipeline import process_user_question, proceed_input
 
 # Load environment variables
 load_dotenv()
