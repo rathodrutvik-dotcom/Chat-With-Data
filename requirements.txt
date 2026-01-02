@@ -16,3 +16,4 @@ flake8-html
 unstructured
 openpyxl
 python-docx
+scikit-learn
