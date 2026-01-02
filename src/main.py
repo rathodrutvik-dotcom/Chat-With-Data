@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 import gradio as gr
 
 from dotenv import load_dotenv
@@ -8,8 +9,9 @@ from utils import proceed_input, process_user_question
 load_dotenv()
 os.environ["GROQ_API_KEY"] = os.getenv("GROQ_API_KEY")
 
-# Create a directory to store data files
-os.makedirs('../data', exist_ok=True)
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DATA_DIR = PROJECT_ROOT / "data"
+DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def gradio_app():

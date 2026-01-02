@@ -163,3 +163,5 @@ cython_debug/
 chat_with_data/
 data/
 flake8_report/
+embedding_store/
+logs/

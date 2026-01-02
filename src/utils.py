@@ -5,6 +5,7 @@ import datetime
 import uuid
 import pytz
 import logging
+from pathlib import Path
 import gradio as gr
 
 
@@ -32,11 +33,17 @@ from langchain_chroma import Chroma
 # ---------------------------------------
 IST = pytz.timezone("Asia/Kolkata")
 LOG_FILE = f"{datetime.datetime.now(IST).strftime('%m_%d_%Y_%H_%M_%S')}.log"
-LOG_PATH = os.path.join("..", "logs")
-os.makedirs(LOG_PATH, exist_ok=True)
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+LOG_PATH = PROJECT_ROOT / "logs"
+DATA_DIR = PROJECT_ROOT / "data"
+EMBEDDING_STORE_DIR = PROJECT_ROOT / "embedding_store"
+SYSTEM_PROMPT_DIR = Path(__file__).resolve().parent / "system_prompt"
+LOG_PATH.mkdir(parents=True, exist_ok=True)
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+EMBEDDING_STORE_DIR.mkdir(parents=True, exist_ok=True)
 
 logging.basicConfig(
-    filename=os.path.join(LOG_PATH, LOG_FILE),
+    filename=str(LOG_PATH / LOG_FILE),
     format="[ %(asctime)s ] %(lineno)d %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO,
 )
@@ -95,15 +102,23 @@ def get_document_chunks(docs):
 # ---------------------------------------
 # Vector Store (Chroma)
 # ---------------------------------------
-def get_vector_store(splits):
-    """Create or update the vector store with a fixed collection name."""
+def reset_embedding_store():
+    """Remove any existing persisted embeddings to isolate a new upload."""
+    if EMBEDDING_STORE_DIR.exists():
+        shutil.rmtree(EMBEDDING_STORE_DIR)
+    EMBEDDING_STORE_DIR.mkdir(parents=True, exist_ok=True)
+    logging.info("Cleared previous embedding store")
+
+
+def get_vector_store(splits, collection_name):
+    """Create a fresh vector store tied to the current upload."""
     vectorstore = Chroma.from_documents(
         documents=splits,
         embedding=embedding_model,
-        persist_directory="../chat_with_data",
-        collection_name="chat_documents",  # Fixed collection name
+        persist_directory=str(EMBEDDING_STORE_DIR),
+        collection_name=collection_name,
     )
-    logging.info("Vectorstore created/updated")
+    logging.info("Vectorstore created for collection: %s", collection_name)
     return vectorstore
 
 
@@ -119,7 +134,8 @@ def get_retriever(vs):
 # ---------------------------------------
 def read_system_prompt(file_name):
     """Read system prompt from YAML file."""
-    with open(f"./system_prompt/{file_name}", "r") as f:
+    prompt_path = SYSTEM_PROMPT_DIR / file_name
+    with open(prompt_path, "r") as f:
         content = f.read().strip()
         return content
 
@@ -182,11 +198,11 @@ def validate_and_save_files(uploaded_files):
         if ext not in [".pdf", ".docx", ".xlsx"]:
             raise gr.Error(f"❌ Unsupported file type: {ext}. Only PDF, DOCX, XLSX are allowed.")
 
-        save_path = os.path.join("../data", f"{file_group_name}-{idx}{ext}")
+        save_path = DATA_DIR / f"{file_group_name}-{idx}{ext}"
         
         try:
-            shutil.copyfile(file.name, save_path)
-            saved_files.append(save_path)
+            shutil.copyfile(file.name, str(save_path))
+            saved_files.append(str(save_path))
             logging.info(f"Saved {file.name} → {save_path}")
         except Exception as e:
             logging.error(f"Error saving file {file.name}: {str(e)}")
@@ -200,10 +216,9 @@ def validate_and_save_files(uploaded_files):
 # ---------------------------------------
 def proceed_input(text, uploaded_files):
     """Main function to process text and uploaded files into a RAG chain."""
-    saved_files = []
     try:
         # Validate and save uploaded files
-        saved_files, _ = validate_and_save_files(uploaded_files)
+        saved_files, file_group_name = validate_and_save_files(uploaded_files)
 
         # Load documents from files
         docs = load_docs(saved_files)
@@ -219,18 +234,10 @@ def proceed_input(text, uploaded_files):
 
         # Process documents
         splits = get_document_chunks(docs)
-        vectorstore = get_vector_store(splits)
+        reset_embedding_store()
+        vectorstore = get_vector_store(splits, collection_name=file_group_name)
         retriever = get_retriever(vectorstore)
         system_prompt = read_system_prompt("custom.yaml")
-
-        # Clean up uploaded files after processing
-        for file_path in saved_files:
-            try:
-                if os.path.exists(file_path):
-                    os.remove(file_path)
-                    logging.info(f"Cleaned up: {file_path}")
-            except Exception as e:
-                logging.warning(f"Could not delete {file_path}: {e}")
 
         logging.info("RAG chain built successfully")
         return build_rag_chain(system_prompt, retriever)
@@ -238,13 +245,6 @@ def proceed_input(text, uploaded_files):
     except gr.Error:
         raise
     except Exception as e:
-        # Clean up files even if there's an error
-        for file_path in saved_files:
-            try:
-                if os.path.exists(file_path):
-                    os.remove(file_path)
-            except:
-                pass
         logging.error(f"Error in proceed_input: {str(e)}")
         raise gr.Error(f"❌ Error processing documents: {str(e)}")
 
