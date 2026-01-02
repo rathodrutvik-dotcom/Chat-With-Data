@@ -1,5 +1,6 @@
 import os
 import shutil
+import time
 import datetime
 import uuid
 import pytz
@@ -542,23 +543,118 @@ def retrieve_relevant_chunks(question: str, session: RagSession, chat_history=No
 # ---------------------------------------
 # Vector Store (Chroma)
 # ---------------------------------------
-def reset_embedding_store():
-    """Remove any existing persisted embeddings to isolate a new upload."""
-    if EMBEDDING_STORE_DIR.exists():
-        shutil.rmtree(EMBEDDING_STORE_DIR)
-    EMBEDDING_STORE_DIR.mkdir(parents=True, exist_ok=True)
-    logging.info("Cleared previous embedding store")
+# Global variable to store consistent Chroma settings
+_CHROMA_SETTINGS = None
+_CURRENT_STORE_DIR = None
 
+def get_chroma_settings():
+    """Get consistent Chroma settings to avoid 'different settings' errors."""
+    global _CHROMA_SETTINGS
+    if _CHROMA_SETTINGS is None:
+        from chromadb.config import Settings
+        _CHROMA_SETTINGS = Settings(
+            anonymized_telemetry=False,
+            allow_reset=True
+        )
+    return _CHROMA_SETTINGS
+
+def get_session_store_dir(file_group_name):
+    """Get a unique directory for this session to avoid database conflicts."""
+    global _CURRENT_STORE_DIR
+    
+    # Clean up previous session directory if it exists
+    if _CURRENT_STORE_DIR is not None and _CURRENT_STORE_DIR.exists():
+        try:
+            # Try to close any existing connections first
+            import gc
+            gc.collect()
+            time.sleep(0.3)
+            
+            # Try to change permissions if readonly
+            try:
+                import stat
+                for root, dirs, files in os.walk(_CURRENT_STORE_DIR):
+                    for dname in dirs:
+                        os.chmod(os.path.join(root, dname), stat.S_IRWXU | stat.S_IRWXG | stat.S_IRWXO)
+                    for fname in files:
+                        os.chmod(os.path.join(root, fname), stat.S_IRWXU | stat.S_IRWXG | stat.S_IRWXO)
+            except Exception:
+                pass
+            
+            shutil.rmtree(_CURRENT_STORE_DIR)
+            logging.info(f"Cleaned up previous session directory: {_CURRENT_STORE_DIR}")
+        except Exception as e:
+            logging.warning(f"Could not clean up previous session directory: {str(e)}")
+    
+    # Create a unique directory for this session with proper permissions
+    session_dir = EMBEDDING_STORE_DIR / file_group_name
+    
+    # Remove directory if it exists (shouldn't, but just in case)
+    if session_dir.exists():
+        try:
+            shutil.rmtree(session_dir)
+            time.sleep(0.1)
+        except Exception as e:
+            logging.warning(f"Could not remove existing session directory: {str(e)}")
+    
+    session_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Ensure directory has write permissions
+    try:
+        import stat
+        os.chmod(session_dir, stat.S_IRWXU | stat.S_IRWXG | stat.S_IRWXO)
+    except Exception:
+        pass
+    
+    _CURRENT_STORE_DIR = session_dir
+    logging.info(f"Created session store directory: {session_dir}")
+    return session_dir
+
+def reset_embedding_store():
+    """Clean up old session directories (keeping only the most recent)."""
+    # Clean up old session directories older than 1 hour
+    if EMBEDDING_STORE_DIR.exists():
+        try:
+            import gc
+            current_time = time.time()
+            max_age = 3600  # 1 hour in seconds
+            
+            for item in EMBEDDING_STORE_DIR.iterdir():
+                if item.is_dir():
+                    try:
+                        # Check if directory is old
+                        age = current_time - item.stat().st_mtime
+                        if age > max_age:
+                            gc.collect()
+                            time.sleep(0.1)
+                            shutil.rmtree(item, ignore_errors=True)
+                            logging.info(f"Cleaned up old session directory: {item}")
+                    except Exception as e:
+                        logging.warning(f"Error cleaning up directory {item}: {str(e)}")
+        except Exception as e:
+            logging.warning(f"Error in reset_embedding_store: {str(e)}")
 
 def get_vector_store(splits, collection_name):
     """Create a fresh vector store tied to the current upload."""
+    import chromadb
+    
+    # Use a unique directory per session to avoid readonly database conflicts
+    session_store_dir = get_session_store_dir(collection_name)
+    
+    # Create client with consistent settings and pass it explicitly to Chroma
+    client = chromadb.PersistentClient(
+        path=str(session_store_dir),
+        settings=get_chroma_settings()
+    )
+    
+    # Pass the client explicitly to ensure same settings are used
     vectorstore = Chroma.from_documents(
         documents=splits,
         embedding=embedding_model,
-        persist_directory=str(EMBEDDING_STORE_DIR),
+        client=client,  # Pass client explicitly to avoid settings conflict
         collection_name=collection_name,
     )
-    logging.info("Vectorstore created for collection: %s", collection_name)
+    logging.info("Vectorstore created for collection: %s in directory: %s", collection_name, session_store_dir)
     return vectorstore
 
 
