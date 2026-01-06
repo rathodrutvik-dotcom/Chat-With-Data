@@ -8,9 +8,8 @@ const Message = ({ message }) => {
 
   return (
     <div
-      className={`flex items-start space-x-4 animate-fade-in ${
-        isUser ? 'justify-end' : 'justify-start'
-      }`}
+      className={`flex items-start space-x-4 animate-fade-in ${isUser ? 'justify-end' : 'justify-start'
+        }`}
     >
       {!isUser && (
         <div className="flex-shrink-0 w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center shadow-lg">
@@ -21,10 +20,9 @@ const Message = ({ message }) => {
       <div
         className={`
           max-w-[80%] rounded-2xl px-5 py-3 shadow-sm
-          ${
-            isUser
-              ? 'bg-gradient-to-br from-blue-600 to-purple-600 text-white'
-              : 'bg-white border border-gray-200 text-gray-900'
+          ${isUser
+            ? 'bg-gradient-to-br from-blue-600 to-purple-600 text-white'
+            : 'bg-white border border-gray-200 text-gray-900'
           }
         `}
       >
@@ -80,8 +78,8 @@ const Message = ({ message }) => {
       </div>
 
       {isUser && (
-        <div className="flex-shrink-0 w-10 h-10 bg-gray-300 rounded-full flex items-center justify-center shadow-lg">
-          <FaUser className="w-5 h-5 text-gray-700" />
+        <div className="flex-shrink-0 w-10 h-10 bg-gray-300 rounded-full flex items-center justify-center shadow-lg text-xl">
+          🧑
         </div>
       )}
     </div>

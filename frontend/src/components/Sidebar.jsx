@@ -164,7 +164,7 @@ const Sidebar = ({ isOpen, onClose }) => {
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex-1 min-w-0 pr-2">
-                      <h3 className="text-sm font-normal truncate text-gray-200">
+                      <h3 className="text-sm font-normal truncate text-gray-200" title={session.document_name}>
                         {session.document_name}
                       </h3>
                     </div>

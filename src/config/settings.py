@@ -35,12 +35,12 @@ SUMMARY_MIN_SECTION_WORDS = 80
 # Retrieval engineering
 DENSE_CANDIDATE_K = 30
 RERANK_TOP_K = 7
-FINAL_CONTEXT_DOCS = 5
+FINAL_CONTEXT_DOCS = 8  # Increased from 5 to allow more comprehensive coverage
 SIMILARITY_THRESHOLD = 0.82
 DENSE_SCORE_WEIGHT = 0.7
 SPARSE_SCORE_WEIGHT = 0.3
 MAX_MULTI_QUERIES = 3
-CONTEXT_TOKEN_BUDGET = 1400
+CONTEXT_TOKEN_BUDGET = 2400  # Increased from 1400 to allow more context
 FOLLOW_UP_PRONOUNS = {
     "it",
     "this",

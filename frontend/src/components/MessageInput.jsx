@@ -40,7 +40,7 @@ const MessageInput = ({ disabled }) => {
   return (
     <div className="max-w-4xl mx-auto w-full p-4">
       <form onSubmit={handleSubmit} className="relative">
-        <div className="relative flex items-end bg-white border-2 border-gray-300 rounded-3xl shadow-lg focus-within:border-blue-500 transition-colors">
+        <div className="relative flex items-center bg-white border-2 border-gray-300 rounded-3xl shadow-lg focus-within:border-blue-500 transition-colors">
           <textarea
             ref={textareaRef}
             value={input}
@@ -61,7 +61,7 @@ const MessageInput = ({ disabled }) => {
             }}
           />
 
-          <div className="flex items-center px-3 pb-3">
+          <div className="flex items-center px-3">
             {sendingMessage ? (
               <button
                 type="button"
@@ -75,8 +75,8 @@ const MessageInput = ({ disabled }) => {
                 type="submit"
                 disabled={!input.trim() || disabled}
                 className={`p-3 rounded-full transition-all transform shadow-md ${input.trim() && !disabled
-                    ? 'bg-black hover:bg-gray-800 text-white hover:scale-105'
-                    : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                  ? 'bg-black hover:bg-gray-800 text-white hover:scale-105'
+                  : 'bg-gray-200 text-gray-400 cursor-not-allowed'
                   }`}
                 title="Send message"
               >

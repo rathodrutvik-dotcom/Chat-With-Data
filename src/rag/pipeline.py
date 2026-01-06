@@ -135,7 +135,14 @@ def process_user_question(user_input, session: RagSession, chat_history=None):
 
         logging.info("User Q: %s", user_input)
         relevant_context = retrieve_relevant_chunks(user_input, session, chat_history)
+        logging.info("Number of context entries retrieved: %d", len(relevant_context))
         context_text = format_context_with_metadata(relevant_context)
+        
+        # Debug: Log the context being sent to LLM
+        logging.info("=" * 80)
+        logging.info("CONTEXT BEING SENT TO LLM:")
+        logging.info(context_text)
+        logging.info("=" * 80)
         history_text = format_chat_history(chat_history)
         payload = {
             "context": context_text,
