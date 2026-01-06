@@ -1,13 +1,30 @@
-import { useState, useRef } from 'react'
-import { FaPlus, FaTimes, FaTrash, FaFile, FaComments, FaEllipsisV, FaPencilAlt } from 'react-icons/fa'
+import { useState, useRef, useEffect } from 'react'
+import { FaPlus, FaTimes, FaTrash, FaFile, FaComments, FaEllipsisV, FaPencilAlt, FaBroom } from 'react-icons/fa'
 import { useChat } from '../context/ChatContext'
 import FileUpload from './FileUpload'
 import { formatDistanceToNow } from 'date-fns'
 
 const Sidebar = ({ isOpen, onClose }) => {
-  const { sessions, currentSession, loadSession, deleteSession, newChat } = useChat()
+  const { sessions, currentSession, loadSession, deleteSession, newChat, clearChat } = useChat()
   const [showUpload, setShowUpload] = useState(false)
   const [openMenuId, setOpenMenuId] = useState(null)
+  const menuRef = useRef(null)
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (menuRef.current && !menuRef.current.contains(event.target)) {
+        setOpenMenuId(null)
+      }
+    }
+
+    if (openMenuId !== null) {
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside)
+      }
+    }
+  }, [openMenuId])
 
   const handleSessionClick = (session) => {
     loadSession(session.session_id)
@@ -20,6 +37,14 @@ const Sidebar = ({ isOpen, onClose }) => {
     e.stopPropagation()
     if (window.confirm('Are you sure you want to delete this session?')) {
       await deleteSession(sessionId)
+    }
+    setOpenMenuId(null)
+  }
+
+  const handleClearChat = async (e, sessionId) => {
+    e.stopPropagation()
+    if (window.confirm('Are you sure you want to clear the chat history? This will remove all messages but keep the session.')) {
+      await clearChat()
     }
     setOpenMenuId(null)
   }
@@ -92,10 +117,9 @@ const Sidebar = ({ isOpen, onClose }) => {
                 onClick={() => handleSessionClick(session)}
                 className={`
                   group relative p-3 rounded-lg cursor-pointer transition-all
-                  ${
-                    currentSession?.session_id === session.session_id
-                      ? 'bg-gray-800'
-                      : 'hover:bg-gray-800'
+                  ${currentSession?.session_id === session.session_id
+                    ? 'bg-gray-800'
+                    : 'hover:bg-gray-800'
                   }
                 `}
               >
@@ -106,7 +130,7 @@ const Sidebar = ({ isOpen, onClose }) => {
                     </h3>
                   </div>
 
-                  <div className="relative flex-shrink-0">
+                  <div className="relative flex-shrink-0" ref={openMenuId === session.session_id ? menuRef : null}>
                     <button
                       onClick={(e) => toggleMenu(e, session.session_id)}
                       className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-gray-700 rounded transition-all"
@@ -117,24 +141,22 @@ const Sidebar = ({ isOpen, onClose }) => {
 
                     {/* Dropdown Menu */}
                     {openMenuId === session.session_id && (
-                      <>
-                        <div
-                          className="fixed inset-0 z-10"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setOpenMenuId(null)
-                          }}
-                        />
-                        <div className="absolute right-0 mt-1 w-48 bg-gray-800 border border-gray-700 rounded-lg shadow-lg z-20 py-1">
-                          <button
-                            onClick={(e) => handleDelete(e, session.session_id)}
-                            className="w-full flex items-center space-x-2 px-4 py-2 text-sm text-red-400 hover:bg-gray-700 transition-colors"
-                          >
-                            <FaTrash className="w-3 h-3" />
-                            <span>Delete</span>
-                          </button>
-                        </div>
-                      </>
+                      <div className="absolute right-0 mt-1 w-48 bg-gray-800 border border-gray-700 rounded-lg shadow-lg z-20 py-1">
+                        <button
+                          onClick={(e) => handleClearChat(e, session.session_id)}
+                          className="w-full flex items-center space-x-2 px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 transition-colors"
+                        >
+                          <FaBroom className="w-3 h-3" />
+                          <span>Clear Chat</span>
+                        </button>
+                        <button
+                          onClick={(e) => handleDelete(e, session.session_id)}
+                          className="w-full flex items-center space-x-2 px-4 py-2 text-sm text-red-400 hover:bg-gray-700 transition-colors"
+                        >
+                          <FaTrash className="w-3 h-3" />
+                          <span>Delete</span>
+                        </button>
+                      </div>
                     )}
                   </div>
                 </div>

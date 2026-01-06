@@ -2,7 +2,7 @@ import { FaBars, FaRobot } from 'react-icons/fa'
 import { useChat } from '../context/ChatContext'
 
 const Header = ({ onMenuClick }) => {
-  const { currentSession } = useChat()
+  const { currentSession, messages } = useChat()
 
   return (
     <header className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between shadow-sm">
@@ -14,7 +14,7 @@ const Header = ({ onMenuClick }) => {
         >
           <FaBars className="w-5 h-5 text-gray-600" />
         </button>
-        
+
         <div className="flex items-center space-x-3">
           <div className="bg-gradient-to-br from-blue-500 to-purple-600 p-2 rounded-lg">
             <FaRobot className="w-5 h-5 text-white" />
@@ -25,7 +25,7 @@ const Header = ({ onMenuClick }) => {
             </h1>
             {currentSession && (
               <p className="text-xs text-gray-500">
-                {currentSession.message_count} messages
+                {messages.length} {messages.length === 1 ? 'message' : 'messages'}
               </p>
             )}
           </div>
