@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react'
-import { FaPlus, FaTimes, FaTrash, FaFile, FaComments, FaEllipsisV } from 'react-icons/fa'
+import { FaPlus, FaTimes, FaTrash, FaFile, FaComments, FaEllipsisV, FaPencilAlt } from 'react-icons/fa'
 import { useChat } from '../context/ChatContext'
 import FileUpload from './FileUpload'
 import { formatDistanceToNow } from 'date-fns'
@@ -56,8 +56,16 @@ const Sidebar = ({ isOpen, onClose }) => {
       >
         {/* Header */}
         <div className="p-4 border-b border-gray-700">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-bold">Chat Sessions</h2>
+          <button
+            onClick={handleNewChat}
+            className="w-full flex items-center space-x-3 text-gray-300 hover:bg-gray-800 px-3 py-2.5 rounded-lg font-normal transition-colors mb-4"
+          >
+            <FaPencilAlt className="w-4 h-4" />
+            <span className="text-sm">New chat</span>
+          </button>
+
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-bold">Your chats</h2>
             <button
               onClick={onClose}
               className="lg:hidden p-2 hover:bg-gray-800 rounded-lg transition-colors"
@@ -65,14 +73,6 @@ const Sidebar = ({ isOpen, onClose }) => {
               <FaTimes />
             </button>
           </div>
-
-          <button
-            onClick={handleNewChat}
-            className="w-full flex items-center justify-center space-x-2 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white px-4 py-3 rounded-lg font-medium transition-all transform hover:scale-105"
-          >
-            <FaPlus />
-            <span>New Chat</span>
-          </button>
         </div>
 
         {/* Sessions List */}
