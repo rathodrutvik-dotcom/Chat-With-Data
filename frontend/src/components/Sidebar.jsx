@@ -2,12 +2,15 @@ import { useState, useRef, useEffect } from 'react'
 import { FaPlus, FaTimes, FaTrash, FaFile, FaComments, FaEllipsisV, FaPencilAlt, FaBroom, FaBars } from 'react-icons/fa'
 import { useChat } from '../context/ChatContext'
 import FileUpload from './FileUpload'
+import ConfirmModal from './ConfirmModal'
 import { formatDistanceToNow } from 'date-fns'
 
 const Sidebar = ({ isOpen, onClose }) => {
   const { sessions, currentSession, loadSession, deleteSession, newChat, clearChat } = useChat()
   const [showUpload, setShowUpload] = useState(false)
   const [openMenuId, setOpenMenuId] = useState(null)
+  const [deleteModal, setDeleteModal] = useState({ isOpen: false, sessionId: null })
+  const [clearChatModal, setClearChatModal] = useState({ isOpen: false, sessionId: null })
   const menuRef = useRef(null)
 
   // Close menu when clicking outside
@@ -33,20 +36,28 @@ const Sidebar = ({ isOpen, onClose }) => {
     }
   }
 
-  const handleDelete = async (e, sessionId) => {
+  const handleDelete = (e, sessionId) => {
     e.stopPropagation()
-    if (window.confirm('Are you sure you want to delete this session?')) {
-      await deleteSession(sessionId)
-    }
+    setDeleteModal({ isOpen: true, sessionId })
     setOpenMenuId(null)
   }
 
-  const handleClearChat = async (e, sessionId) => {
+  const handleClearChat = (e, sessionId) => {
     e.stopPropagation()
-    if (window.confirm('Are you sure you want to clear the chat history? This will remove all messages but keep the session.')) {
+    setClearChatModal({ isOpen: true, sessionId })
+    setOpenMenuId(null)
+  }
+
+  const confirmDelete = async () => {
+    if (deleteModal.sessionId) {
+      await deleteSession(deleteModal.sessionId)
+    }
+  }
+
+  const confirmClearChat = async () => {
+    if (clearChatModal.sessionId) {
       await clearChat()
     }
-    setOpenMenuId(null)
   }
 
   const toggleMenu = (e, sessionId) => {
@@ -210,6 +221,32 @@ const Sidebar = ({ isOpen, onClose }) => {
       {showUpload && (
         <FileUpload onClose={() => setShowUpload(false)} />
       )}
+
+      {/* Delete Session Modal */}
+      <ConfirmModal
+        isOpen={deleteModal.isOpen}
+        onClose={() => setDeleteModal({ isOpen: false, sessionId: null })}
+        onConfirm={confirmDelete}
+        title="Delete chat?"
+        message="This will permanently delete this chat and all associated messages. This action cannot be undone."
+        confirmText="Delete"
+        cancelText="Cancel"
+        confirmButtonClass="bg-red-600 hover:bg-red-700"
+        icon={FaTrash}
+      />
+
+      {/* Clear Chat Modal */}
+      <ConfirmModal
+        isOpen={clearChatModal.isOpen}
+        onClose={() => setClearChatModal({ isOpen: false, sessionId: null })}
+        onConfirm={confirmClearChat}
+        title="Clear chat?"
+        message="This will remove all messages from this chat. The session and uploaded documents will be preserved."
+        confirmText="Clear"
+        cancelText="Cancel"
+        confirmButtonClass="bg-orange-600 hover:bg-orange-700"
+        icon={FaBroom}
+      />
     </>
   )
 }

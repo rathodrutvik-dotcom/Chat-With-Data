@@ -86,7 +86,7 @@ GEMINI_MODEL=gemini-1.5-pro
 ✅ **Fallback Mechanism**: If Gemini fails and Groq is enabled, automatically falls back to Groq
 ✅ **Custom Models**: Configure specific model versions for each provider
 ✅ **Comprehensive Logging**: Detailed logs for debugging and monitoring
-✅ **Error Handling**: Provider-specific error messages for better troubleshooting
+✅ **Error Handling**: Prompt for direct, grounded avider-specific error messages for better troubleshooting
 
 ## Installation
 
