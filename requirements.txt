@@ -1,13 +1,15 @@
 langchain
 langchain_chroma
 langchain-groq
+langchain-google-genai
 langchain_openai
 langchain_ollama
 langchain_community
 langchain_huggingface
 sentence_transformers
 accelerate
-gradio
+gradio<4.0
+websockets>=11.0,<12.0
 pyngrok
 pypdf
 pytz

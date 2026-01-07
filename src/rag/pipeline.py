@@ -4,8 +4,15 @@ import gradio as gr
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_groq import ChatGroq
+from langchain_google_genai import ChatGoogleGenerativeAI
 
-from config.settings import DENSE_CANDIDATE_K
+from config.settings import (
+    DENSE_CANDIDATE_K,
+    USE_GROQ,
+    USE_GEMINI,
+    GROQ_MODEL,
+    GEMINI_MODEL,
+)
 from ingestion.chunking import get_document_chunks
 from ingestion.files import validate_and_save_files
 from ingestion.loaders import load_docs
@@ -43,11 +50,54 @@ def format_chat_history(chat_history, limit=6):
     return "\n".join(lines) if lines else "None"
 
 
-def build_rag_chain(system_prompt):
-    """Build RAG chain with the LLM-only template."""
+def build_rag_chain(system_prompt, use_groq=None, use_gemini=None):
+    """
+    Build RAG chain with configurable LLM provider.
+    
+    Args:
+        system_prompt: System prompt for the LLM
+        use_groq: Boolean to enable Groq (defaults to USE_GROQ from settings)
+        use_gemini: Boolean to enable Gemini (defaults to USE_GEMINI from settings)
+    
+    Returns:
+        RAG chain with selected LLM
+    """
     logging.info("Building modern RAG pipeline")
-
-    llm = ChatGroq(model="llama-3.3-70b-versatile")
+    
+    # Use provided parameters or fall back to environment settings
+    use_groq_flag = use_groq if use_groq is not None else USE_GROQ
+    use_gemini_flag = use_gemini if use_gemini is not None else USE_GEMINI
+    
+    # Determine which LLM to use (priority: Gemini > Groq)
+    llm = None
+    
+    if use_gemini_flag:
+        try:
+            logging.info(f"Initializing Gemini LLM with model: {GEMINI_MODEL}")
+            llm = ChatGoogleGenerativeAI(
+                model=GEMINI_MODEL,
+                temperature=0.7,
+                convert_system_message_to_human=True
+            )
+            logging.info("✅ Successfully initialized Gemini LLM")
+        except Exception as e:
+            logging.error(f"❌ Failed to initialize Gemini: {e}")
+            if not use_groq_flag:
+                raise gr.Error(f"Failed to initialize Gemini and Groq is disabled: {e}")
+    
+    if llm is None and use_groq_flag:
+        try:
+            logging.info(f"Initializing Groq LLM with model: {GROQ_MODEL}")
+            llm = ChatGroq(model=GROQ_MODEL)
+            logging.info("✅ Successfully initialized Groq LLM")
+        except Exception as e:
+            logging.error(f"❌ Failed to initialize Groq: {e}")
+            raise gr.Error(f"Failed to initialize Groq LLM: {e}")
+    
+    if llm is None:
+        error_msg = "No LLM provider enabled. Please set USE_GROQ=true or USE_GEMINI=true in .env"
+        logging.error(error_msg)
+        raise gr.Error(error_msg)
 
     template = ChatPromptTemplate.from_messages(
         [
@@ -160,6 +210,8 @@ def process_user_question(user_input, session: RagSession, chat_history=None):
             return "Error: Document formatting issue. Please reprocess your documents."
         if "API" in error_msg or "Groq" in error_msg:
             return "Error: API connection issue. Please check your GROQ_API_KEY."
+        if "Gemini" in error_msg or "Google" in error_msg:
+            return "Error: API connection issue. Please check your GEMINI_API_KEY."
         return f"Error: {error_msg}"
 
 

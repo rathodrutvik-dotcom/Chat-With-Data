@@ -9,7 +9,8 @@ This application combines document processing, vector embeddings, and LLM capabi
 - **Document Upload**: Support for PDF, DOCX, and XLSX files
 - **Persistent Conversations**: Chat history is saved automatically and survives page refreshes
 - **Multiple Sessions**: Manage multiple document collections with independent chat histories
-- **RAG Pipeline**: Uses Chroma vector store, LangChain, and Groq LLM for accurate, contextual responses
+- **RAG Pipeline**: Uses Chroma vector store, LangChain, and configurable LLM (Groq or Gemini) for accurate, contextual responses
+- **Flexible LLM Support**: Choose between Groq or Google Gemini as your LLM provider
 - **Session Management**: Switch between different document sessions seamlessly
 
 ## Architecture
@@ -26,7 +27,9 @@ The application follows a modular architecture:
 ### Prerequisites
 
 - Python 3.8 or higher
-- Groq API key
+- At least one LLM API key:
+  - Groq API key ([Get one here](https://console.groq.com))
+  - OR Google Gemini API key ([Get one here](https://makersuite.google.com/app/apikey))
 - (Optional) Ngrok auth token for public sharing
 
 ### Installation Steps
@@ -56,9 +59,26 @@ pip install -r requirements.txt
 Create a `.env` file in the project root:
 
 ```bash
-GROQ_API_KEY=<your_groq_api_key>
-NGROK_AUTH_TOKEN=<your_ngrok_token>  # Optional
+# API Keys (at least one required)
+GROQ_API_KEY=your_groq_api_key_here
+GEMINI_API_KEY=your_gemini_api_key_here
+
+# LLM Provider Configuration
+USE_GROQ=true      # Set to true to enable Groq
+USE_GEMINI=false   # Set to true to enable Gemini
+
+# Model Selection (optional, defaults shown)
+GROQ_MODEL=llama-3.1-8b-instant
+GEMINI_MODEL=gemini-2.0-flash-exp
+
+# Optional
+NGROK_AUTH_TOKEN=<your_ngrok_token>
 ```
+
+**LLM Provider Priority:**
+- If both `USE_GROQ` and `USE_GEMINI` are enabled, Gemini will be used by default
+- At least one provider must be enabled
+- You only need the API key for the provider you're using
 
 #### Step 5: Run the Application
 
@@ -127,7 +147,9 @@ sqlite3 src/logs/chat_history.db
 ## Technology Stack
 
 - **UI**: Gradio
-- **LLM**: Groq (LLaMA 3.3 70B)
+- **LLM**: Configurable (Groq or Google Gemini)
+  - Groq: llama-3.1-8b-instant (default)
+  - Gemini: gemini-2.0-flash-exp (default)
 - **Vector Store**: Chroma
 - **Embeddings**: sentence-transformers/all-MiniLM-L6-v2
 - **Framework**: LangChain
@@ -139,4 +161,5 @@ sqlite3 src/logs/chat_history.db
 - Embeddings persist in `embedding_store/` directory
 - Chat history is stored in `src/logs/chat_history.db`
 - Processing time increases with larger files
-- Internet connection required for Groq API access
+- Internet connection required for LLM API access
+- You can switch between Groq and Gemini by updating the `.env` file

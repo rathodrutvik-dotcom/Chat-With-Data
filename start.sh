@@ -52,9 +52,18 @@ echo ""
 if [ ! -f .env ]; then
     echo -e "${YELLOW}⚠️  .env file not found!${NC}"
     echo "Creating .env file template..."
-    cat > .env << EOF
+    cat > .env <<EOF
 # API Keys
 GROQ_API_KEY=your_groq_api_key_here
+GEMINI_API_KEY=your_gemini_api_key_here
+
+# LLM Provider Configuration
+USE_GROQ=true
+USE_GEMINI=false
+
+# Model Selection (optional)
+GROQ_MODEL=llama-3.1-8b-instant
+GEMINI_MODEL=gemini-2.0-flash
 
 # Server Configuration
 FASTAPI_HOST=0.0.0.0
@@ -62,7 +71,7 @@ FASTAPI_PORT=8000
 GRADIO_HOST=0.0.0.0
 GRADIO_PORT=7000
 EOF
-    echo -e "${GREEN}✅ Created .env file. Please add your GROQ_API_KEY!${NC}"
+    echo -e "${GREEN}✅ Created .env file. Please add your API keys!${NC}"
     echo ""
 fi
 
