@@ -11,10 +11,6 @@ from rag.pipeline import process_user_question, proceed_input
 load_dotenv()
 os.environ["GROQ_API_KEY"] = os.getenv("GROQ_API_KEY")
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DATA_DIR = PROJECT_ROOT / "data"
-DATA_DIR.mkdir(parents=True, exist_ok=True)
-
 # Initialize session manager
 session_manager = get_session_manager()
 

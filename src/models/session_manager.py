@@ -185,20 +185,38 @@ class SessionManager:
             if session_id in self.active_sessions:
                 del self.active_sessions[session_id]
             
-            # Delete embedding store directory
+            # Delete embedding store directory and uploaded files
             if session_info and session_info.get('collection_name'):
-                from config.settings import EMBEDDING_STORE_DIR
+                from config.settings import EMBEDDING_STORE_DIR, DATA_DIR
                 import shutil
+                import glob
                 
                 collection_name = session_info['collection_name']
-                store_dir = EMBEDDING_STORE_DIR / collection_name
                 
+                # Delete embedding store directory
+                store_dir = EMBEDDING_STORE_DIR / collection_name
                 if store_dir.exists():
                     try:
                         shutil.rmtree(store_dir)
                         logging.info("Deleted embedding store for session %s at %s", session_id, store_dir)
                     except Exception as e:
                         logging.warning("Could not delete embedding store at %s: %s", store_dir, e)
+                
+                # Delete uploaded document files from DATA_DIR
+                # Files are named as: {collection_name}-{idx}.{ext}
+                try:
+                    data_files = glob.glob(str(DATA_DIR / f"{collection_name}-*"))
+                    for file_path in data_files:
+                        try:
+                            Path(file_path).unlink()
+                            logging.info("Deleted uploaded file: %s", file_path)
+                        except Exception as e:
+                            logging.warning("Could not delete file %s: %s", file_path, e)
+                    
+                    if data_files:
+                        logging.info("Deleted %d uploaded file(s) for session %s", len(data_files), session_id)
+                except Exception as e:
+                    logging.warning("Error deleting uploaded files for session %s: %s", session_id, e)
             
             # Mark as inactive in database
             success = self.storage.delete_session(session_id)

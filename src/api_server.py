@@ -40,9 +40,8 @@ app.add_middleware(
 # Initialize session manager
 session_manager = get_session_manager()
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DATA_DIR = PROJECT_ROOT / "data"
-DATA_DIR.mkdir(parents=True, exist_ok=True)
+# Import DATA_DIR from config to ensure consistency
+from config.settings import DATA_DIR
 
 
 # Pydantic models for request/response
@@ -190,11 +189,18 @@ async def upload_documents(files: List[UploadFile] = File(...)):
     Upload and process documents to create a new session.
     Accepts PDF, DOCX, and XLSX files.
     """
+    import tempfile
+    import os
+    
+    temp_dir = None
     try:
         if not files:
             raise HTTPException(status_code=400, detail="No files provided")
         
-        # Save uploaded files temporarily
+        # Create a temporary directory for uploaded files
+        temp_dir = tempfile.mkdtemp()
+        
+        # Save uploaded files to temporary directory
         temp_files = []
         for file in files:
             # Validate file type
@@ -206,13 +212,13 @@ async def upload_documents(files: List[UploadFile] = File(...)):
                     detail=f"Invalid file type: {file.filename}. Allowed: PDF, DOCX, XLSX"
                 )
             
-            # Save to temp location
-            temp_path = DATA_DIR / file.filename
+            # Save to temporary location
+            temp_path = Path(temp_dir) / file.filename
             with open(temp_path, "wb") as f:
                 content = await file.read()
                 f.write(content)
             
-            # Create a file-like object with name attribute
+            # Create a file-like object with name attribute (compatible with Gradio interface)
             class FileObject:
                 def __init__(self, path):
                     self.name = str(path)
@@ -220,6 +226,7 @@ async def upload_documents(files: List[UploadFile] = File(...)):
             temp_files.append(FileObject(temp_path))
         
         # Process documents using existing pipeline
+        # This will save files properly to DATA_DIR with collection naming
         rag_session, collection_name, doc_name = proceed_input(temp_files)
         
         # Create session
@@ -241,6 +248,15 @@ async def upload_documents(files: List[UploadFile] = File(...)):
     except Exception as e:
         logging.error(f"Error processing upload: {e}")
         raise HTTPException(status_code=500, detail=f"Error processing documents: {str(e)}")
+    finally:
+        # Clean up temporary directory
+        if temp_dir and os.path.exists(temp_dir):
+            try:
+                import shutil
+                shutil.rmtree(temp_dir)
+                logging.info(f"Cleaned up temporary directory: {temp_dir}")
+            except Exception as e:
+                logging.warning(f"Could not clean up temp directory {temp_dir}: {e}")
 
 
 @app.post("/api/chat", response_model=ChatResponse)
