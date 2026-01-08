@@ -120,23 +120,23 @@ def gradio_app():
             
             try:
                 # Process documents (document name is auto-generated)
-                rag_session, collection_name, doc_name, _ = proceed_input(files)
+                result = proceed_input(files)
                 
                 # Create new session
                 session_id = session_manager.create_session(
-                    rag_session, 
-                    doc_name,
-                    collection_name
+                    result.rag_session, 
+                    result.document_name,
+                    result.collection_name
                 )
                 
                 # Refresh session list
                 sessions = session_manager.get_all_sessions()
                 choices = [doc_name for sid, doc_name, _ in sessions]
                 
-                display_value = doc_name
+                display_value = result.document_name
                 
                 return (
-                    f"✅ Documents processed successfully! Session: {doc_name}",
+                    f"✅ Documents processed successfully! Session: {result.document_name}",
                     session_id,
                     [],
                     display_value,

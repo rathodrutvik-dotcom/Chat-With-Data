@@ -16,7 +16,7 @@ from config.settings import (
 from ingestion.chunking import get_document_chunks
 from ingestion.files import validate_and_save_files
 from ingestion.loaders import load_docs
-from models.session import RagSession
+from models.session import RagSession, PipelineResult
 from prompts.system_prompt import read_system_prompt
 from retrieval.query_rewrite import generate_query_variations, rewrite_query
 from retrieval.question_decomposition import (
@@ -403,7 +403,12 @@ def proceed_input(uploaded_files, document_name: str = None):
             sparse_index=sparse_index,
         )
         
-        return rag_session, collection_name, doc_name, original_filenames
+        return PipelineResult(
+            rag_session=rag_session,
+            collection_name=collection_name,
+            document_name=doc_name,
+            original_filenames=original_filenames
+        )
 
     except gr.Error:
         raise

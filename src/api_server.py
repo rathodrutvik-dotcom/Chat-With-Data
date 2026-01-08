@@ -229,20 +229,20 @@ async def upload_documents(files: List[UploadFile] = File(...)):
         
         # Process documents using existing pipeline
         # This will save files properly to DATA_DIR with collection naming
-        rag_session, collection_name, doc_name, _ = proceed_input(temp_files)
+        result = proceed_input(temp_files)
         
         # Create session
         session_id = session_manager.create_session(
-            rag_session,
-            doc_name,
-            collection_name
+            result.rag_session,
+            result.document_name,
+            result.collection_name
         )
         
         return {
             "session_id": session_id,
-            "document_name": doc_name,
-            "collection_name": collection_name,
-            "message": f"Documents processed successfully: {doc_name}"
+            "document_name": result.document_name,
+            "collection_name": result.collection_name,
+            "message": f"Documents processed successfully: {result.document_name}"
         }
         
     except HTTPException:

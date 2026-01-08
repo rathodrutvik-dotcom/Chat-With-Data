@@ -39,7 +39,7 @@ from ingestion.chunking import (  # noqa: F401
 )
 from ingestion.files import create_unique_filename, validate_and_save_files  # noqa: F401
 from ingestion.loaders import load_docs  # noqa: F401
-from models.session import RagSession  # noqa: F401
+from models.session import RagSession, PipelineResult  # noqa: F401
 from prompts.system_prompt import read_system_prompt  # noqa: F401
 from rag.pipeline import (  # noqa: F401
     build_rag_chain,
@@ -108,6 +108,7 @@ __all__ = [
     "load_docs",
     # Models
     "RagSession",
+    "PipelineResult",
     # Prompts
     "read_system_prompt",
     # RAG pipeline

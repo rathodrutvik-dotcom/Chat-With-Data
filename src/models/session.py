@@ -14,4 +14,13 @@ class RagSession:
     collection_name: Optional[str] = None
 
 
-__all__ = ["RagSession"]
+@dataclass
+class PipelineResult:
+    """Result object for the RAG pipeline processing."""
+    rag_session: RagSession
+    collection_name: str
+    document_name: str
+    original_filenames: list = field(default_factory=list)
+
+
+__all__ = ["RagSession", "PipelineResult"]
