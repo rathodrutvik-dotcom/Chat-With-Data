@@ -207,11 +207,16 @@ def retrieve_relevant_chunks(user_input, session: RagSession, chat_history=None,
     Returns:
         List of context entries with documents, scores, and metadata
     """
+    print(f"--- DEBUG: START RETRIEVAL ---", flush=True)
+    print(f"Query: '{user_input}'", flush=True)
+    
     # Step 0: Determine retrieval strategy
     strategy = determine_retrieval_strategy(user_input, question_type)
     
     if strategy['mode'] == 'exhaustive':
         # EXHAUSTIVE MODE: Retrieve all matching chunks without TopK limit
+        print("--- DEBUG: RETRIEVAL STRATEGY: EXHAUSTIVE ---", flush=True)
+        print("Optimization: Skipping query rewrite for comprehensive search.", flush=True)
         logging.info("Using EXHAUSTIVE retrieval mode for counting/enumeration query")
         logging.info("Document filter: %s, Metadata filter: %s", document_filter, strategy['metadata_filter'])
         
@@ -296,10 +301,13 @@ def retrieve_relevant_chunks(user_input, session: RagSession, chat_history=None,
     
     else:
         # SEMANTIC MODE: Use TopK with query variations
+        print(f"--- DEBUG: RETRIEVAL STRATEGY: SEMANTIC (k={strategy['k']}) ---", flush=True)
         logging.info("Using SEMANTIC retrieval mode with k=%d", strategy['k'])
         retrieval_k = strategy['k']  # Use adaptive k value
         
         rewritten_query = rewrite_query(user_input, chat_history)
+        print(f"Rewritten Query: '{rewritten_query}'", flush=True)
+        
         queries = generate_query_variations(rewritten_query, chat_history) or [rewritten_query]
         logging.info("Rewritten query: %s", rewritten_query)
         logging.info("Generated %d query variations for comprehensive retrieval", len(queries))
@@ -364,12 +372,17 @@ def retrieve_relevant_chunks(user_input, session: RagSession, chat_history=None,
     context_entries = assemble_context_entries(unique_entries)
     logging.info("Final context entries selected: %d", len(context_entries))
     
-    # Log document distribution
+    # Log document distribution AND detailed content preview
     doc_distribution = {}
-    for entry in context_entries:
+    print("--- DEBUG: SELECTED CONTEXT CHUNKS ---", flush=True)
+    for i, entry in enumerate(context_entries):
         doc_name = entry["doc"].metadata.get("document_name", "unknown")
         doc_distribution[doc_name] = doc_distribution.get(doc_name, 0) + 1
-    logging.info("Document distribution in context: %s", doc_distribution)
+        content_snippet = entry["doc"].page_content[:100].replace('\n', ' ')
+        print(f"Chunk {i+1}: Doc='{doc_name}', Score={entry.get('score', 'N/A')}, Content='{content_snippet} ...'", flush=True)
+    
+    print(f"Document distribution in context: {doc_distribution}", flush=True)
+    print("--- DEBUG: END RETRIEVAL ---", flush=True)
     
     return context_entries
 
@@ -436,7 +449,8 @@ def process_user_question(user_input, session: RagSession, chat_history=None):
         if not user_input or not user_input.strip():
             return {"answer": "Please enter a valid question.", "sources": []}
 
-        logging.info("User Q: %s", user_input)
+        print("----- DEBUG: START QUERY PROCESSING -----", flush=True)
+        print(f"User Q: {user_input}", flush=True)
         
         # Check for explicit document filter in the question
         doc_filter = extract_document_filter_from_question(user_input)
@@ -445,6 +459,10 @@ def process_user_question(user_input, session: RagSession, chat_history=None):
         
         # Decompose question if it has multiple intents
         sub_questions = decompose_question(user_input)
+        
+        if len(sub_questions) > 1:
+            print(f"--- DEBUG: MULTI-INTENT DETECTED ---", flush=True)
+            print(f"Decomposed into {len(sub_questions)} sub-questions: {[sq['question'] for sq in sub_questions]}", flush=True)
         
         if len(sub_questions) > 1:
             logging.info("Processing %d sub-questions separately", len(sub_questions))
@@ -490,6 +508,7 @@ def process_user_question(user_input, session: RagSession, chat_history=None):
                     "question": question_text,
                 }
                 
+                logging.info("Invoking LLM for sub-question...")
                 answer_text = session.rag_chain.invoke(payload)
                 
                 sub_answers.append({
@@ -504,7 +523,8 @@ def process_user_question(user_input, session: RagSession, chat_history=None):
             # Synthesize all sub-answers into final answer
             final_answer = synthesize_answers(sub_answers, user_input)
             
-            logging.info("Synthesized final answer: %s chars", len(final_answer))
+            print(f"Synthesized final answer: {len(final_answer)} chars", flush=True)
+            print("----- DEBUG: END QUERY PROCESSING -----", flush=True)
             
             return {
                 "answer": final_answer,
@@ -531,10 +551,11 @@ def process_user_question(user_input, session: RagSession, chat_history=None):
             context_text = format_context_with_metadata(relevant_context)
             
             # Debug: Log the context being sent to LLM
-            logging.info("=" * 80)
-            logging.info("CONTEXT BEING SENT TO LLM:")
-            logging.info(context_text)
-            logging.info("=" * 80)
+            print("=" * 80, flush=True)
+            print("----- DEBUG: LLM CONTEXT START -----", flush=True)
+            print(context_text, flush=True)
+            print("----- DEBUG: LLM CONTEXT END -----", flush=True)
+            print("=" * 80, flush=True)
             
             # History is only used for query rewriting, not sent to LLM
             # This prevents conversation memory from contaminating answers
@@ -543,8 +564,14 @@ def process_user_question(user_input, session: RagSession, chat_history=None):
                 "history": "None",  # Isolated - rely only on retrieved context
                 "question": user_input,
             }
+            
+            print("----- DEBUG: INVOKING LLM -----", flush=True)
             answer_text = session.rag_chain.invoke(payload)
-            logging.info("Answer generated successfully: %s chars", len(answer_text))
+            print("----- DEBUG: LLM RAW RESPONSE -----", flush=True)
+            print(answer_text, flush=True)
+            print("----- DEBUG: END LLM RESPONSE -----", flush=True)
+            
+            print(f"Answer generated successfully: {len(answer_text)} chars", flush=True)
             
             # Validate answer completeness with retrieval mode context
             validation_result = validate_context_completeness(
@@ -559,6 +586,7 @@ def process_user_question(user_input, session: RagSession, chat_history=None):
             # Append warning if needed
             final_answer = append_validation_warning(answer_text, validation_result)
             
+            logging.info("----- DEBUG: END QUERY PROCESSING -----")
             return {
                 "answer": final_answer,
                 "sources": sources

@@ -22,6 +22,18 @@ load_dotenv()
 os.environ["GROQ_API_KEY"] = os.getenv("GROQ_API_KEY")
 os.environ["GOOGLE_API_KEY"] = os.getenv("GEMINI_API_KEY")  # Gemini uses GOOGLE_API_KEY
 
+# Configure logging
+import sys
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+logger = logging.getLogger(__name__)
+logger.info("Logging configured successfully")
+
 # Initialize FastAPI app
 app = FastAPI(
     title="Chat with Documents API",

@@ -8,7 +8,7 @@ from langchain_huggingface import HuggingFaceEmbeddings
 
 # Paths
 IST = pytz.timezone("Asia/Kolkata")
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 LOG_FILE = f"{datetime.datetime.now(IST).strftime('%m_%d_%Y_%H_%M_%S')}.log"
 LOG_PATH = PROJECT_ROOT / "logs"
 DATA_DIR = PROJECT_ROOT / "data"
@@ -16,7 +16,7 @@ EMBEDDING_STORE_DIR = PROJECT_ROOT / "embedding_store"
 SYSTEM_PROMPT_DIR = Path(__file__).resolve().parent.parent / "system_prompt"
 
 LOG_PATH.mkdir(parents=True, exist_ok=True)
-DATA_DIR.mkdir(parents=True, exist_ok=True)
+DATA_DIR.mkdir(parents=True, exist_ok=True) 
 EMBEDDING_STORE_DIR.mkdir(parents=True, exist_ok=True)
 
 logging.basicConfig(
@@ -46,8 +46,11 @@ FOLLOW_UP_PRONOUNS = {
     "this",
     "that",
     "those",
+    "these",
     "they",
     "them",
+    "their",
+    "theirs",
     "he",
     "she",
     "him",

@@ -27,88 +27,133 @@ def clean_chat_snippet(text, limit=CHAT_SNIPPET_MAX_CHARS):
     return snippet[:limit]
 
 
+
+from config.settings import USE_GROQ, USE_GEMINI, GROQ_MODEL, GEMINI_MODEL
+from langchain_groq import ChatGroq
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+
 def rewrite_query(user_input, chat_history):
+    """
+    Rewrites the user's query to be self-contained by resolving pronouns 
+    and references using the chat history.
+    """
     trimmed = (user_input or "").strip()
     if not trimmed:
         return trimmed
 
-    words = re.findall(r"\b[\w']+\b", trimmed.lower())
-    contains_pronoun = any(word in FOLLOW_UP_PRONOUNS for word in words)
-    last_user_message = get_last_message_by_role(chat_history, "user")
-    last_assistant_message = get_last_message_by_role(chat_history, "assistant")
+    # If no history, no need to rewrite
+    if not chat_history:
+        return trimmed
 
-    snippets = []
-    if contains_pronoun and last_user_message:
-        snippet = clean_chat_snippet(last_user_message.get("content", ""))
-        if snippet:
-            snippets.append(f"Refer to previous user question: {snippet}")
-    elif len(words) <= 3 and last_assistant_message:
-        snippet = clean_chat_snippet(last_assistant_message.get("content", ""))
-        if snippet:
-            snippets.append(f"Context from assistant reply: {snippet}")
+    # Relaxed condition: If history exists, we should probably check with LLM, 
+    # unless it's a very clear standalone query.
+    # But for "smart" behavior, we bias towards using LLM if there's any ambiguity.
+    
+    logging.info("Rewriting query using LLM for better context resolution...")
+    
+    try:
+        # Initialize LLM for rewriting (lightweight)
+        llm = None
+        if USE_GEMINI:
+             llm = ChatGoogleGenerativeAI(model=GEMINI_MODEL, temperature=0.1)
+        elif USE_GROQ:
+             llm = ChatGroq(model=GROQ_MODEL, temperature=0.1)
+        
+        if not llm:
+            logging.warning("No LLM available for query rewriting, falling back to original.")
+            return trimmed
 
-    rewritten = f"{trimmed} ({' | '.join(snippets)})" if snippets else trimmed
-    logging.info("Rewritten query: %s", rewritten)
-    return rewritten
+        # Format history string
+        history_str = ""
+        # Get more history context? 2 turns is usually enough for immediate follow-up
+        recent_history = chat_history[-4:] if len(chat_history) >= 4 else chat_history
+        
+        for msg in recent_history:
+            role = "User" if msg.get("role") == "user" else "Assistant"
+            content = clean_chat_snippet(msg.get("content", ""), limit=500)
+            history_str += f"{role}: {content}\n"
 
+        prompt = ChatPromptTemplate.from_template(
+            """Given the conversation history, rewrite the latest user question to be a standalone search query.
+            If the question is a follow-up (e.g. "what about usage?", "and the cost?"), incorporate context from previous turns.
+            If the question is already standalone (e.g. "How do I upload?"), return it mostly as-is but fixed for clarity.
+            
+            Chat History:
+            {history}
+            
+            Latest User Question: {question}
+            
+            Standalone Query:"""
+        )
+        
+        chain = prompt | llm | StrOutputParser()
+        rewritten = chain.invoke({"history": history_str, "question": trimmed})
+        
+        # Cleanup
+        rewritten = rewritten.strip().replace('"', '')
+        logging.info(f"Original: '{trimmed}' -> Rewritten: '{rewritten}'")
+        return rewritten
+
+    except Exception as e:
+        logging.error(f"Error re-writing query: {e}")
+        # Fallback to simple concatenation if LLM fails
+        return f"{trimmed} (Context: {history_str[-100:]})" if 'history_str' in locals() else trimmed
+
+
+from langchain_core.output_parsers import JsonOutputParser
 
 def generate_query_variations(rewritten_query, chat_history):
-    """Generate query variations to improve multi-document retrieval.
-    
-    Creates semantic variations that help retrieve information spread across documents.
-    """
+    """Generate query variations using LLM to improve retrieval."""
     if not rewritten_query:
         return []
 
-    variations = [rewritten_query]
-    
-    # Add semantic variations for better multi-document coverage
-    # Extract key terms and concepts for expansion
-    query_lower = rewritten_query.lower()
-    
-    # Handle counting/listing queries
-    if any(word in query_lower for word in ["how many", "list", "all", "count", "what are"]):
-        variations.append(f"{rewritten_query} complete list comprehensive")
-        variations.append(f"enumerate all {rewritten_query}")
-    
-    # Handle timeline/date queries
-    if any(word in query_lower for word in ["timeline", "when", "date", "schedule", "deadline"]):
-        variations.append(f"{rewritten_query} schedule dates deadlines milestones")
-        variations.append(f"timeline and dates for {rewritten_query}")
-    
-    # Handle location queries
-    if any(word in query_lower for word in ["where", "location", "place", "site"]):
-        variations.append(f"{rewritten_query} location address site place")
-    
-    # Handle project/entity details queries
-    if any(word in query_lower for word in ["project", "details", "information", "about"]):
-        variations.append(f"comprehensive information {rewritten_query}")
-        variations.append(f"all details regarding {rewritten_query}")
-    
-    # Add context from chat history
-    last_assistant_message = get_last_message_by_role(chat_history, "assistant")
-    last_user_message = get_last_message_by_role(chat_history, "user")
+    logging.info("Generating query variations with LLM...")
+    try:
+        llm = None
+        if USE_GEMINI:
+             llm = ChatGoogleGenerativeAI(model=GEMINI_MODEL, temperature=0.3)
+        elif USE_GROQ:
+             llm = ChatGroq(model=GROQ_MODEL, temperature=0.3)
+        
+        if not llm:
+            return [rewritten_query]
 
-    if last_assistant_message:
-        snippet = clean_chat_snippet(last_assistant_message.get("content", ""))
-        if snippet:
-            variations.append(f"{rewritten_query} {snippet}")
+        prompt = ChatPromptTemplate.from_template(
+            """Generate 3-5 diverse search query variations for the user question to maximize retrieval coverage.
+            Address different aspects: exact keywords, semantic meaning, and related concepts.
+            
+            User Question: {question}
+            
+            Output strictly JSON:
+            {{ "variations": ["variation 1", "variation 2", "variation 3"] }}
+            """
+        )
+        
+        chain = prompt | llm | JsonOutputParser()
+        result = chain.invoke({"question": rewritten_query})
+        variations = result.get("variations", [])
+        
+        # Ensure original is included
+        if rewritten_query not in variations:
+            variations.insert(0, rewritten_query)
+            
+        logging.info("Generated %d variations via LLM", len(variations))
+        return variations[:MAX_MULTI_QUERIES]
 
-    if last_user_message:
-        snippet = clean_chat_snippet(last_user_message.get("content", ""))
-        if snippet:
-            variations.append(f"{rewritten_query} Refer to: {snippet}")
-
-    # Keep unique variations
-    unique_variations = []
-    for variation in variations:
-        if variation and variation not in unique_variations:
-            unique_variations.append(variation)
-        if len(unique_variations) >= MAX_MULTI_QUERIES:
-            break
-    
-    logging.info("Generated %d query variations for comprehensive retrieval", len(unique_variations))
-    return unique_variations
+    except Exception as e:
+        logging.warning(f"LLM variation generation failed: {e}. Falling back to heuristic.")
+        
+        # --- Fallback to original static logic ---
+        variations = [rewritten_query]
+        query_lower = rewritten_query.lower()
+        if any(word in query_lower for word in ["how many", "list", "all", "count", "what are"]):
+            variations.append(f"{rewritten_query} complete list comprehensive")
+        if any(word in query_lower for word in ["where", "location", "place"]):
+            variations.append(f"{rewritten_query} location address")
+            
+        return variations
 
 
 __all__ = [

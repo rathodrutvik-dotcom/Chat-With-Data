@@ -10,169 +10,108 @@ import re
 from typing import List, Dict, Optional
 
 
+from config.settings import USE_GROQ, USE_GEMINI, GROQ_MODEL, GEMINI_MODEL
+from langchain_groq import ChatGroq
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import JsonOutputParser
+
+def get_llm():
+    """Helper to get the configured LLM."""
+    if USE_GEMINI:
+        return ChatGoogleGenerativeAI(model=GEMINI_MODEL, temperature=0.0)
+    elif USE_GROQ:
+        return ChatGroq(model=GROQ_MODEL, temperature=0.0)
+    return None
+    """Helper to get the configured LLM."""
+    if USE_GEMINI:
+        return ChatGoogleGenerativeAI(model=GEMINI_MODEL, temperature=0.0)
+    elif USE_GROQ:
+        return ChatGroq(model=GROQ_MODEL, temperature=0.0)
+    return None
+
 def detect_multi_intent_question(question: str) -> bool:
     """
-    Detect if a question contains multiple intents or asks about multiple topics.
-    
-    Args:
-        question: The user's question
-        
-    Returns:
-        True if the question has multiple intents, False otherwise
+    Detect if a question contains multiple intents using LLM analysis.
+    For performance, we still do a quick regex check first for obvious cases.
     """
-    question_lower = question.lower()
-    
-    # Check for coordinating conjunctions that often link multiple questions
-    multi_intent_patterns = [
-        r'\band\s+(what|how|when|where|who|which|give|tell|provide|show)',
-        r'\balso\s+(what|how|when|where|who|which|give|tell|provide|show)',
-        r'\bplus\s+(what|how|when|where|who|which)',
-        r'[?]\s+(what|how|when|where|who|which)',  # Multiple question marks
-        r'\band\s+also',
-        r',\s*and\s+(what|how|when|where|who|which)',
-    ]
-    
-    for pattern in multi_intent_patterns:
-        if re.search(pattern, question_lower):
-            return True
-    
-    # Check for multiple distinct information requests
-    info_requests = [
-        'what is',
-        'how many',
-        'when is',
-        'where is',
-        'who is',
-        'give me',
-        'tell me',
-        'provide',
-        'list',
-        'show',
-        'explain',
-        'describe',
-    ]
-    
-    request_count = sum(1 for req in info_requests if req in question_lower)
-    if request_count >= 2:
-        return True
-    
-    return False
+    # Fast path: simple questions probably don't need LLM
+    if len(question.split()) < 5 and "and" not in question.lower():
+        return False
 
+    try:
+        llm = get_llm()
+        if not llm:
+            return False 
+            
+        prompt = ChatPromptTemplate.from_template(
+            """Analyze if the following question asks for multiple distinct pieces of information that would require separate searches.
+            Return ONLY textual JSON: {{"is_multi_intent": true/false}}
+            
+            Question: {question}
+            """
+        )
+        chain = prompt | llm | JsonOutputParser()
+        result = chain.invoke({"question": question})
+        return result.get("is_multi_intent", False)
+    except Exception as e:
+        logging.warning(f"LLM intent detection failed: {e}. Falling back to heuristic.")
+        # Fallback to simple heuristic
+        return " and " in question.lower() or "?" in question.replace(question[-1], "")
 
 def decompose_question(question: str) -> List[Dict[str, str]]:
     """
-    Decompose a complex multi-intent question into simpler sub-questions.
-    
-    Args:
-        question: The user's complex question
-        
-    Returns:
-        List of dictionaries containing sub-questions with metadata:
-        [{"question": "sub-question text", "type": "specific/timeline/count/etc"}]
+    Decompose a complex multi-intent question into simpler sub-questions using LLM.
     """
+    # Fast check
     if not detect_multi_intent_question(question):
-        # Single intent - return as-is
-        return [{"question": question, "type": "single", "original": True}]
+         return [{"question": question, "type": "single", "original": True}]
+
+    logging.info("Decomposing complex question with LLM: %s", question)
     
-    logging.info("Detected multi-intent question, decomposing: %s", question)
-    
-    # Split on common conjunctions and punctuation
-    sub_questions = []
-    
-    # Strategy 1: Split on "and [question-word]" patterns
-    and_split_pattern = r'\s+and\s+(what|how|when|where|who|which|give|tell|provide|show|list)'
-    parts = re.split(and_split_pattern, question, flags=re.IGNORECASE)
-    
-    if len(parts) > 1:
-        # Reconstruct sub-questions
-        current_q = parts[0].strip()
-        for i in range(1, len(parts), 2):
-            if i < len(parts):
-                # Add previous question
-                if current_q and not current_q.endswith('?'):
-                    current_q += '?'
-                if current_q:
-                    sub_questions.append(current_q)
-                
-                # Start new question with the question word
-                if i + 1 < len(parts):
-                    current_q = parts[i] + ' ' + parts[i + 1].strip()
-                else:
-                    current_q = parts[i].strip()
-        
-        # Add the last question
-        if current_q:
-            if not current_q.endswith('?'):
-                current_q += '?'
-            sub_questions.append(current_q)
-    
-    # Strategy 2: Split on multiple question marks
-    if not sub_questions:
-        q_parts = [p.strip() for p in question.split('?') if p.strip()]
-        if len(q_parts) > 1:
-            sub_questions = [p + '?' for p in q_parts]
-    
-    # Strategy 3: Split on commas followed by question words
-    if not sub_questions:
-        comma_pattern = r',\s*(and\s+)?(what|how|when|where|who|which)'
-        parts = re.split(comma_pattern, question, flags=re.IGNORECASE)
-        if len(parts) > 1:
-            base = parts[0].strip()
-            for i in range(1, len(parts), 3):  # Skip the 'and' and question word groups
-                if i + 1 < len(parts):
-                    q = parts[i + 1] + ' ' + (parts[i + 2] if i + 2 < len(parts) else '')
-                    if not q.strip().endswith('?'):
-                        q = q.strip() + '?'
-                    sub_questions.append(q.strip())
+    try:
+        llm = get_llm()
+        if not llm:
+             raise ValueError("No LLM configured")
+
+        prompt = ChatPromptTemplate.from_template(
+            """Break down the following complex user question into a list of atomic, self-contained sub-questions.
+            Each sub-question should be standalone and contain all necessary context.
+            Identify the type of each question (count, timeline, location, listing, general).
             
-            # Add the base question
-            if base and not base.endswith('?'):
-                base += '?'
-            sub_questions.insert(0, base)
-    
-    # If no decomposition worked, return original
-    if not sub_questions or len(sub_questions) == 1:
-        sub_questions = [question]
-    
-    # Clean and categorize sub-questions
-    processed = []
-    for q in sub_questions:
-        q = q.strip()
-        if not q:
-            continue
+            Output strictly JSON format:
+            {{
+                "sub_questions": [
+                    {{"question": "first sub-question?", "type": "topic_type"}},
+                    {{"question": "second sub-question?", "type": "topic_type"}}
+                ]
+            }}
+            
+            Original Question: {question}
+            """
+        )
         
-        # Ensure it ends with a question mark
-        if not q.endswith('?'):
-            q += '?'
+        chain = prompt | llm | JsonOutputParser()
+        result = chain.invoke({"question": question})
         
-        # Determine question type for better handling
-        q_lower = q.lower()
-        q_type = "general"
-        
-        if any(word in q_lower for word in ["how many", "count", "number of"]):
-            q_type = "count"
-        elif any(word in q_lower for word in ["timeline", "when", "date", "schedule"]):
-            q_type = "timeline"
-        elif any(word in q_lower for word in ["where", "location"]):
-            q_type = "location"
-        elif any(word in q_lower for word in ["list", "all", "what are"]):
-            q_type = "list"
-        elif any(word in q_lower for word in ["objective", "goal", "purpose"]):
-            q_type = "objective"
-        elif any(word in q_lower for word in ["scope", "coverage"]):
-            q_type = "scope"
-        elif any(word in q_lower for word in ["budget", "cost"]):
-            q_type = "budget"
-        
-        processed.append({
-            "question": q,
-            "type": q_type,
-            "original": False
-        })
-    
-    logging.info("Decomposed into %d sub-questions: %s", len(processed), [p["question"] for p in processed])
-    
-    return processed
+        sub_questions = []
+        for item in result.get("sub_questions", []):
+            sub_questions.append({
+                "question": item.get("question"),
+                "type": item.get("type", "general"),
+                "original": False
+            })
+            
+        if not sub_questions:
+            # Fallback if parsing returned empty
+            return [{"question": question, "type": "single", "original": True}]
+            
+        logging.info("LLM decomposed into: %s", sub_questions)
+        return sub_questions
+
+    except Exception as e:
+        logging.error(f"LLM decomposition failed: {e}. Returning original.")
+        return [{"question": question, "type": "single", "original": True}]
 
 
 def extract_document_filter_from_question(question: str) -> Optional[str]:
