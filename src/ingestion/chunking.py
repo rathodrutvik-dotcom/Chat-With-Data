@@ -12,23 +12,25 @@ from config.settings import (
     SUMMARY_MAX_CHARS,
     SUMMARY_MIN_SECTION_WORDS,
 )
+from ingestion.entity_extraction import enrich_chunk_metadata, inject_entity_prefixes
 
 
 def determine_split_params(doc):
     text = (doc.page_content or "").strip()
     word_count = len(text.split())
     if word_count == 0:
-        return 400, 80
+        return 400, 100
 
     newline_ratio = text.count("\n") / max(word_count, 1)
 
     if newline_ratio > SLIDE_NEWLINE_RATIO_THRESHOLD or word_count < SLIDE_WORD_THRESHOLD:
-        return 450, 125
+        return 450, 150
 
     if word_count > 1800:
-        return 1500, 300
+        return 1500, 400
 
-    return 1050, 200
+    # Increased overlap for better context preservation
+    return 1050, 250
 
 
 def summarize_section(section_text):
@@ -86,6 +88,11 @@ def get_document_chunks(docs):
         splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
         base_meta = dict(doc.metadata or {})
         source_prefix = base_meta.get("source") or f"chunk-{uuid.uuid4().hex[:8]}"
+        
+        # Store parent document info for context
+        parent_doc_name = base_meta.get("document_name") or base_meta.get("source")
+        parent_doc_text = (doc.page_content or "").strip()
+        parent_doc_preview = parent_doc_text[:500] if parent_doc_text else ""
 
         for idx, chunk in enumerate(splitter.split_documents([doc]), start=1):
             metadata = dict(base_meta)
@@ -93,6 +100,17 @@ def get_document_chunks(docs):
             metadata["chunk_id"] = metadata.get("chunk_id") or f"{source_prefix}-chunk-{idx}"
             metadata["chunk_index"] = idx
             metadata["source_type"] = metadata.get("source_type", "chunk")
+            metadata["parent_document"] = parent_doc_name
+            metadata["parent_preview"] = parent_doc_preview  # Context from parent doc
+            
+            # Enrich metadata with extracted entities for better filtering and counting
+            chunk_text = chunk.page_content or ""
+            metadata = enrich_chunk_metadata(chunk_text, metadata)
+            
+            # Inject entity prefixes into chunk content for better retrieval
+            enhanced_content = inject_entity_prefixes(chunk_text, metadata)
+            chunk.page_content = enhanced_content
+            
             chunk.metadata = metadata
             chunked.append(chunk)
 

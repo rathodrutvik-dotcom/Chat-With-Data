@@ -53,10 +53,39 @@ def rewrite_query(user_input, chat_history):
 
 
 def generate_query_variations(rewritten_query, chat_history):
+    """Generate query variations to improve multi-document retrieval.
+    
+    Creates semantic variations that help retrieve information spread across documents.
+    """
     if not rewritten_query:
         return []
 
     variations = [rewritten_query]
+    
+    # Add semantic variations for better multi-document coverage
+    # Extract key terms and concepts for expansion
+    query_lower = rewritten_query.lower()
+    
+    # Handle counting/listing queries
+    if any(word in query_lower for word in ["how many", "list", "all", "count", "what are"]):
+        variations.append(f"{rewritten_query} complete list comprehensive")
+        variations.append(f"enumerate all {rewritten_query}")
+    
+    # Handle timeline/date queries
+    if any(word in query_lower for word in ["timeline", "when", "date", "schedule", "deadline"]):
+        variations.append(f"{rewritten_query} schedule dates deadlines milestones")
+        variations.append(f"timeline and dates for {rewritten_query}")
+    
+    # Handle location queries
+    if any(word in query_lower for word in ["where", "location", "place", "site"]):
+        variations.append(f"{rewritten_query} location address site place")
+    
+    # Handle project/entity details queries
+    if any(word in query_lower for word in ["project", "details", "information", "about"]):
+        variations.append(f"comprehensive information {rewritten_query}")
+        variations.append(f"all details regarding {rewritten_query}")
+    
+    # Add context from chat history
     last_assistant_message = get_last_message_by_role(chat_history, "assistant")
     last_user_message = get_last_message_by_role(chat_history, "user")
 
@@ -70,12 +99,15 @@ def generate_query_variations(rewritten_query, chat_history):
         if snippet:
             variations.append(f"{rewritten_query} Refer to: {snippet}")
 
+    # Keep unique variations
     unique_variations = []
     for variation in variations:
         if variation and variation not in unique_variations:
             unique_variations.append(variation)
         if len(unique_variations) >= MAX_MULTI_QUERIES:
             break
+    
+    logging.info("Generated %d query variations for comprehensive retrieval", len(unique_variations))
     return unique_variations
 
 

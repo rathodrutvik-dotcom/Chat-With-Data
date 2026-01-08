@@ -19,6 +19,16 @@ from ingestion.loaders import load_docs
 from models.session import RagSession
 from prompts.system_prompt import read_system_prompt
 from retrieval.query_rewrite import generate_query_variations, rewrite_query
+from retrieval.question_decomposition import (
+    decompose_question,
+    detect_multi_intent_question,
+    extract_document_filter_from_question,
+    synthesize_answers,
+)
+from retrieval.answer_validation import (
+    validate_context_completeness,
+    append_validation_warning,
+)
 from retrieval.ranking import (
     SparseIndex,
     assemble_context_entries,
@@ -114,27 +124,92 @@ def build_rag_chain(system_prompt, use_groq=None, use_gemini=None):
     return rag_chain
 
 
-def retrieve_relevant_chunks(question: str, session: RagSession, chat_history=None):
+def retrieve_relevant_chunks(question: str, session: RagSession, chat_history=None, document_filter: str = None):
+    """Retrieve relevant chunks with enhanced multi-document support.
+    
+    Uses multiple query variations and ensures document diversity in results.
+    
+    Args:
+        question: User's question
+        session: RAG session with vectorstore
+        chat_history: Chat history for context
+        document_filter: Optional document name to filter results
+    
+    Returns:
+        List of context entries with documents and scores
+    """
     rewritten_query = rewrite_query(question, chat_history)
     queries = generate_query_variations(rewritten_query, chat_history) or [rewritten_query]
-    logging.debug("Rewritten query: %s", rewritten_query)
-    logging.debug("Query variations: %s", queries)
+    logging.info("Rewritten query: %s", rewritten_query)
+    logging.info("Generated %d query variations for comprehensive retrieval", len(queries))
 
+    # Collect dense candidates from all query variations
     dense_candidates = []
+    dense_docs_seen = set()
+    
     for query in queries:
-        hits = session.vectorstore.similarity_search_with_score(query, k=DENSE_CANDIDATE_K)
-        dense_candidates.extend(hits)
+        # If document filter is specified, apply it during retrieval
+        if document_filter:
+            hits = session.vectorstore.similarity_search_with_score(
+                query, 
+                k=DENSE_CANDIDATE_K,
+                filter={"document_name": document_filter}
+            )
+        else:
+            hits = session.vectorstore.similarity_search_with_score(query, k=DENSE_CANDIDATE_K)
+        
+        for doc, score in hits:
+            doc_id = id(doc)
+            if doc_id not in dense_docs_seen:
+                # Apply document filter if specified (for vectorstores that don't support native filtering)
+                if document_filter:
+                    doc_name = doc.metadata.get("document_name", "")
+                    if document_filter.lower() not in doc_name.lower():
+                        continue
+                
+                dense_candidates.append((doc, score))
+                dense_docs_seen.add(doc_id)
+    
+    logging.info("Collected %d unique dense candidates from %d queries", len(dense_candidates), len(queries))
 
+    # Get sparse candidates
     sparse_candidates = session.sparse_index.query(rewritten_query, top_k=DENSE_CANDIDATE_K)
+    
+    # Apply document filter to sparse candidates
+    if document_filter:
+        sparse_candidates = [
+            (doc, score) for doc, score in sparse_candidates
+            if document_filter.lower() in doc.metadata.get("document_name", "").lower()
+        ]
+    
+    logging.info("Collected %d sparse candidates", len(sparse_candidates))
+    
+    # Merge and score
     merged = merge_candidate_scores(dense_candidates, sparse_candidates)
+    logging.info("Merged candidates: %d", len(merged))
 
     if not merged and dense_candidates:
         merged = [{"doc": doc, "score": score} for doc, score in dense_candidates]
 
+    # Rerank with cross-encoder
     reranked = rerank_with_cross_encoder(rewritten_query, merged)
+    logging.info("Reranked to top %d candidates", len(reranked))
+    
+    # Filter duplicates
     unique_entries = filter_near_duplicates(reranked)
+    logging.info("After deduplication: %d unique entries", len(unique_entries))
+    
+    # Assemble context with document diversity
     context_entries = assemble_context_entries(unique_entries)
-    logging.debug("Context entries selected: %s", len(context_entries))
+    logging.info("Final context entries selected: %d", len(context_entries))
+    
+    # Log document distribution
+    doc_distribution = {}
+    for entry in context_entries:
+        doc_name = entry["doc"].metadata.get("document_name", "unknown")
+        doc_distribution[doc_name] = doc_distribution.get(doc_name, 0) + 1
+    logging.info("Document distribution in context: %s", doc_distribution)
+    
     return context_entries
 
 
@@ -179,6 +254,8 @@ def proceed_input(uploaded_files, document_name: str = None):
 def process_user_question(user_input, session: RagSession, chat_history=None):
     """Process user question and get answer from RAG chain.
     
+    Supports multi-intent question decomposition for comprehensive answers.
+    
     Returns:
         Dictionary containing:
         - answer: The text response
@@ -194,32 +271,122 @@ def process_user_question(user_input, session: RagSession, chat_history=None):
             return {"answer": "Please enter a valid question.", "sources": []}
 
         logging.info("User Q: %s", user_input)
-        relevant_context = retrieve_relevant_chunks(user_input, session, chat_history)
-        logging.info("Number of context entries retrieved: %d", len(relevant_context))
         
-        # Extract source documents
-        sources = extract_source_documents(relevant_context)
+        # Check for explicit document filter in the question
+        doc_filter = extract_document_filter_from_question(user_input)
+        if doc_filter:
+            logging.info("Detected document filter: %s", doc_filter)
         
-        context_text = format_context_with_metadata(relevant_context)
+        # Decompose question if it has multiple intents
+        sub_questions = decompose_question(user_input)
         
-        # Debug: Log the context being sent to LLM
-        logging.info("=" * 80)
-        logging.info("CONTEXT BEING SENT TO LLM:")
-        logging.info(context_text)
-        logging.info("=" * 80)
-        history_text = format_chat_history(chat_history)
-        payload = {
-            "context": context_text,
-            "history": history_text,
-            "question": user_input,
-        }
-        answer_text = session.rag_chain.invoke(payload)
-        logging.info("Answer generated successfully: %s chars", len(answer_text))
+        if len(sub_questions) > 1:
+            logging.info("Processing %d sub-questions separately", len(sub_questions))
+            
+            # Process each sub-question independently
+            sub_answers = []
+            all_sources = set()
+            
+            for sub_q in sub_questions:
+                question_text = sub_q["question"]
+                question_type = sub_q["type"]
+                
+                logging.info("Processing sub-question (%s): %s", question_type, question_text)
+                
+                # Retrieve context for this specific sub-question
+                relevant_context = retrieve_relevant_chunks(
+                    question_text, 
+                    session, 
+                    chat_history,
+                    document_filter=doc_filter
+                )
+                
+                if not relevant_context:
+                    sub_answers.append({
+                        "question": question_text,
+                        "answer": f"Information for '{question_text}' is not available in the provided documents.",
+                        "sources": []
+                    })
+                    continue
+                
+                # Extract sources
+                sources = extract_source_documents(relevant_context)
+                all_sources.update(sources)
+                
+                # Format context
+                context_text = format_context_with_metadata(relevant_context)
+                
+                # Get answer from LLM
+                history_text = format_chat_history(chat_history)
+                payload = {
+                    "context": context_text,
+                    "history": history_text,
+                    "question": question_text,
+                }
+                
+                answer_text = session.rag_chain.invoke(payload)
+                
+                sub_answers.append({
+                    "question": question_text,
+                    "answer": answer_text,
+                    "sources": sources,
+                    "type": question_type
+                })
+                
+                logging.info("Sub-answer generated: %s chars", len(answer_text))
+            
+            # Synthesize all sub-answers into final answer
+            final_answer = synthesize_answers(sub_answers, user_input)
+            
+            logging.info("Synthesized final answer: %s chars", len(final_answer))
+            
+            return {
+                "answer": final_answer,
+                "sources": list(all_sources)
+            }
         
-        return {
-            "answer": answer_text,
-            "sources": sources
-        }
+        else:
+            # Single question - process normally
+            relevant_context = retrieve_relevant_chunks(
+                user_input, 
+                session, 
+                chat_history,
+                document_filter=doc_filter
+            )
+            logging.info("Number of context entries retrieved: %d", len(relevant_context))
+            
+            # Extract source documents
+            sources = extract_source_documents(relevant_context)
+            
+            context_text = format_context_with_metadata(relevant_context)
+            
+            # Debug: Log the context being sent to LLM
+            logging.info("=" * 80)
+            logging.info("CONTEXT BEING SENT TO LLM:")
+            logging.info(context_text)
+            logging.info("=" * 80)
+            
+            history_text = format_chat_history(chat_history)
+            payload = {
+                "context": context_text,
+                "history": history_text,
+                "question": user_input,
+            }
+            answer_text = session.rag_chain.invoke(payload)
+            logging.info("Answer generated successfully: %s chars", len(answer_text))
+            
+            # Validate answer completeness
+            validation_result = validate_context_completeness(user_input, relevant_context, answer_text)
+            logging.info("Answer validation: confidence=%s, complete=%s", 
+                        validation_result["confidence"], validation_result["is_complete"])
+            
+            # Append warning if needed
+            final_answer = append_validation_warning(answer_text, validation_result)
+            
+            return {
+                "answer": final_answer,
+                "sources": sources
+            }
         
     except Exception as exc:  # pylint: disable=broad-except
         error_msg = str(exc)

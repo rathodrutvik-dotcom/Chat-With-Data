@@ -165,54 +165,89 @@ def count_tokens(item):
 
 
 def assemble_context_entries(entries, max_chunks=FINAL_CONTEXT_DOCS):
+    """Assemble context entries with document diversity to ensure multi-document coverage.
+    
+    Uses round-robin selection across documents to ensure all source documents
+    are represented in the final context, which is critical for multi-document queries.
+    """
     if not entries:
         return []
 
-    clusters = {}
+    # Group by document (not just source/chunk)
+    doc_clusters = {}
     for entry in entries:
         doc = entry["doc"]
         metadata = doc.metadata or {}
-        source = metadata.get("source") or metadata.get("chunk_id") or "unknown-source"
-        clusters.setdefault(source, []).append(entry)
+        # Use document_name for grouping to ensure different docs are treated separately
+        doc_name = metadata.get("document_name") or metadata.get("source") or "unknown-source"
+        doc_clusters.setdefault(doc_name, []).append(entry)
 
-    for cluster_entries in clusters.values():
+    # Sort entries within each document cluster by score
+    for cluster_entries in doc_clusters.values():
         cluster_entries.sort(key=lambda e: e.get("rerank_score", e.get("score", 0)), reverse=True)
 
+    # Sort document clusters by their best entry's score
     sorted_clusters = sorted(
-        clusters.values(),
-        key=lambda cluster: cluster[0].get("rerank_score", cluster[0].get("score", 0)),
+        doc_clusters.items(),
+        key=lambda item: item[1][0].get("rerank_score", item[1][0].get("score", 0)),
         reverse=True,
     )
 
-    # Interleave entries from clusters (Round-Robin) to ensure diverse sources
+    logging.info(f"Found {len(sorted_clusters)} unique documents in results")
+    for doc_name, cluster in sorted_clusters:
+        logging.info(f"  - {doc_name}: {len(cluster)} chunks")
+
+    # Round-robin selection to ensure diversity across documents
     final_entries = []
     token_count = 0
     
-    # Create iterators for each cluster
-    cluster_iters = [iter(cluster) for cluster in sorted_clusters]
-    active_clusters = len(cluster_iters)
+    # Calculate minimum chunks per document to ensure fair representation
+    min_chunks_per_doc = max(2, max_chunks // len(sorted_clusters)) if sorted_clusters else 1
     
-    while active_clusters > 0 and len(final_entries) < max_chunks:
-        active_clusters = 0
-        for cluster_iter in cluster_iters:
-            try:
-                entry = next(cluster_iter)
-                active_clusters += 1
+    # First pass: Get at least min_chunks_per_doc from each document
+    for doc_name, cluster in sorted_clusters:
+        chunks_added = 0
+        for entry in cluster:
+            if len(final_entries) >= max_chunks:
+                break
                 
-                # Check limits
-                if len(final_entries) >= max_chunks:
-                    break
-                    
-                doc_tokens = count_tokens(entry["doc"])
-                if token_count + doc_tokens > CONTEXT_TOKEN_BUDGET and final_entries:
-                    continue
-                    
-                final_entries.append(entry)
-                token_count += doc_tokens
-                
-            except StopIteration:
+            doc_tokens = count_tokens(entry["doc"])
+            if token_count + doc_tokens > CONTEXT_TOKEN_BUDGET and final_entries:
                 continue
+                
+            final_entries.append(entry)
+            token_count += doc_tokens
+            chunks_added += 1
+            
+            if chunks_added >= min_chunks_per_doc:
+                break
+    
+    # Second pass: Fill remaining slots with round-robin
+    if len(final_entries) < max_chunks:
+        cluster_iters = [iter(cluster[min_chunks_per_doc:]) for _, cluster in sorted_clusters]
+        active_clusters = len(cluster_iters)
+        
+        while active_clusters > 0 and len(final_entries) < max_chunks:
+            active_clusters = 0
+            for cluster_iter in cluster_iters:
+                try:
+                    entry = next(cluster_iter)
+                    active_clusters += 1
+                    
+                    if len(final_entries) >= max_chunks:
+                        break
+                        
+                    doc_tokens = count_tokens(entry["doc"])
+                    if token_count + doc_tokens > CONTEXT_TOKEN_BUDGET:
+                        continue
+                        
+                    final_entries.append(entry)
+                    token_count += doc_tokens
+                    
+                except StopIteration:
+                    continue
 
+    logging.info(f"Assembled {len(final_entries)} context entries from {len(sorted_clusters)} documents")
     return final_entries
 
 
@@ -220,41 +255,60 @@ def format_context_with_metadata(entries):
     """Format context entries with metadata for LLM consumption.
     
     Includes document source information for proper attribution in responses.
+    Groups entries by document for better multi-document comprehension.
     """
     if not entries:
         return "No relevant context found in the uploaded documents."
 
-    sections = []
-    for idx, entry in enumerate(entries, start=1):
+    # Group entries by document for clearer presentation
+    doc_groups = {}
+    for entry in entries:
         doc = entry["doc"]
         metadata = doc.metadata or {}
-        
-        # Get document name for source tracking (prioritize document_name)
         doc_name = metadata.get("document_name") or metadata.get("source") or "unknown"
         
-        chunk_id = metadata.get("chunk_id", "unknown-chunk")
-        source_type = metadata.get("source_type", "chunk")
-        summary_tag = metadata.get("summary_of_section")
-        score = entry.get("rerank_score") or entry.get("score") or 0.0
-        page = metadata.get("page", "")
+        if doc_name not in doc_groups:
+            doc_groups[doc_name] = []
+        doc_groups[doc_name].append(entry)
+    
+    # Format with clear document grouping
+    sections = []
+    sections.append(f"=== INFORMATION FROM {len(doc_groups)} DOCUMENT(S) ===\\n")
+    
+    context_num = 1
+    for doc_name, doc_entries in doc_groups.items():
+        sections.append(f"--- DOCUMENT: {doc_name} ---")
         
-        # Build metadata line with clear document attribution
-        metadata_parts = [f"Document: {doc_name}"]
-        if page:
-            metadata_parts.append(f"Page: {page}")
-        metadata_parts.extend([
-            f"Chunk: {chunk_id}",
-            f"Type: {source_type}",
-            f"Score: {score:.3f}"
-        ])
-        if summary_tag:
-            metadata_parts.append(f"Summary: {summary_tag}")
+        for entry in doc_entries:
+            doc = entry["doc"]
+            metadata = doc.metadata or {}
             
-        metadata_line = " | ".join(metadata_parts)
-        section_text = normalize_page_content(doc.page_content).strip()
-        sections.append(f"[{doc_name}] Context {idx} ({metadata_line}):\n{section_text}")
+            chunk_id = metadata.get("chunk_id", "unknown-chunk")
+            source_type = metadata.get("source_type", "chunk")
+            summary_tag = metadata.get("summary_of_section")
+            score = entry.get("rerank_score") or entry.get("score") or 0.0
+            page = metadata.get("page", "")
+            
+            # Build metadata line
+            metadata_parts = []
+            if page:
+                metadata_parts.append(f"Page: {page}")
+            metadata_parts.extend([
+                f"Chunk: {chunk_id}",
+                f"Type: {source_type}",
+                f"Relevance: {score:.3f}"
+            ])
+            if summary_tag:
+                metadata_parts.append(f"Summary: {summary_tag}")
+                
+            metadata_line = " | ".join(metadata_parts)
+            section_text = normalize_page_content(doc.page_content).strip()
+            sections.append(f"Context {context_num} ({metadata_line}):\n{section_text}")
+            context_num += 1
+        
+        sections.append("")  # Empty line between documents
 
-    return "\n\n".join(sections)
+    return "\\n".join(sections)
 
 
 def extract_source_documents(entries) -> list:
