@@ -77,8 +77,15 @@ def rewrite_query(user_input, chat_history):
 
         prompt = ChatPromptTemplate.from_template(
             """Given the conversation history, rewrite the latest user question to be a standalone search query.
-            If the question is a follow-up (e.g. "what about usage?", "and the cost?"), incorporate context from previous turns.
-            If the question is already standalone (e.g. "How do I upload?"), return it mostly as-is but fixed for clarity.
+            
+            Rules:
+            1. If the question is a follow-up (e.g. "what about usage?", "and the cost?"), incorporate context from previous turns.
+            2. If the user is answering a clarification question from the AI (Task Refinement), combine the user's new answer with the ORIGINAL user request to form a complete instruction.
+               Example:
+               - History: User: "Write an email." -> AI: "To whom?" -> User: "My boss."
+               - Good Rewrite: "Write an email to my boss." (Preserves "Write an email" intent)
+               - Bad Rewrite: "Who is my boss?" (Loses intent)
+            3. If the question is already standalone, return it mostly as-is.
             
             Chat History:
             {history}
