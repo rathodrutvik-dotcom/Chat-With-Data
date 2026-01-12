@@ -751,9 +751,13 @@ def add_documents_to_existing_session(uploaded_files, session_id: str, session_m
             if not success:
                 raise Exception("Failed to add documents to session")
             
+            # Format document names nicely for display
+            doc_names = ", ".join(original_filenames)
+            message = f"Successfully added {len(original_filenames)} document(s): {doc_names}"
+            
             return {
                 "success": True,
-                "message": f"Successfully added {len(original_filenames)} document(s)",
+                "message": message,
                 "filenames": original_filenames
             }
             

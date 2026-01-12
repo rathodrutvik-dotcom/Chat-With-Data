@@ -427,7 +427,7 @@ async def add_documents_to_session(session_id: str, files: List[UploadFile] = Fi
         
         # Add system message to chat history indicating documents were added
         documents_list = ", ".join(result["filenames"])
-        system_message = f"📎 Added {len(result['filenames'])} document(s) to conversation: {documents_list}"
+        system_message = f"Added {len(result['filenames'])} document(s) to conversation: {documents_list}"
         session_manager.save_message(session_id, "system", system_message)
         
         logging.info(f"Successfully added documents to session {session_id}: {documents_list}")
