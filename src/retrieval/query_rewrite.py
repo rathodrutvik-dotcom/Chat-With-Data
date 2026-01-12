@@ -1,7 +1,7 @@
 import logging
 import re
 
-from config.settings import CHAT_SNIPPET_MAX_CHARS, FOLLOW_UP_PRONOUNS, MAX_MULTI_QUERIES
+from config.settings import CHAT_SNIPPET_MAX_CHARS, MAX_MULTI_QUERIES
 
 
 def get_last_message_by_role(chat_history, role):
@@ -67,13 +67,17 @@ def rewrite_query(user_input, chat_history):
 
         # Format history string
         history_str = ""
-        # Get more history context? 2 turns is usually enough for immediate follow-up
-        recent_history = chat_history[-4:] if len(chat_history) >= 4 else chat_history
+        # Get more history context - need enough to capture enumerated lists from earlier
+        # For ordinal references (first/second/third), we need to see the original list
+        recent_history = chat_history[-10:] if len(chat_history) >= 10 else chat_history
         
         for msg in recent_history:
             role = "User" if msg.get("role") == "user" else "Assistant"
-            content = clean_chat_snippet(msg.get("content", ""), limit=500)
+            # Increase limit to capture full enumerated lists (e.g., list of 4 projects)
+            content = clean_chat_snippet(msg.get("content", ""), limit=1000)
             history_str += f"{role}: {content}\n"
+        
+        logging.info(f"Query rewrite with {len(recent_history)} messages in history")
 
         prompt = ChatPromptTemplate.from_template(
             """Given the conversation history, rewrite the latest user question to be a standalone search query.
