@@ -159,6 +159,30 @@ export const ChatProvider = ({ children }) => {
     }
   }, [currentSession, loadSessions]);
 
+  // Rename a session
+  const renameSession = useCallback(async (sessionId, newName) => {
+    try {
+      const result = await chatAPI.renameSession(sessionId, newName);
+      
+      // If renamed session is current, update it
+      if (currentSession?.session_id === sessionId) {
+        setCurrentSession((prev) => ({
+          ...prev,
+          document_name: result.new_name,
+        }));
+      }
+      
+      // Reload sessions to update the list
+      await loadSessions();
+      setError(null);
+      return result;
+    } catch (err) {
+      console.error('Error renaming session:', err);
+      setError('Failed to rename session');
+      throw err;
+    }
+  }, [currentSession, loadSessions]);
+
   // Create new chat (clear current selection)
   const newChat = useCallback(() => {
     setCurrentSession(null);
@@ -224,6 +248,7 @@ export const ChatProvider = ({ children }) => {
     sendMessage,
     clearChat,
     deleteSession,
+    renameSession,
     newChat,
     addDocumentsToSession,
     setError,

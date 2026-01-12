@@ -186,6 +186,46 @@ async def clear_session_chat(session_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.patch("/api/sessions/{session_id}/rename")
+async def rename_session(session_id: str, new_name: str):
+    """Rename a chat session.
+
+    Args:
+        session_id: Session to rename
+        new_name: New display name (query parameter)
+
+    Returns:
+        Success message with updated session info
+    """
+    try:
+        # Validate session exists
+        session_info = session_manager.get_session_info(session_id)
+        if not session_info:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        # Validate new name
+        if not new_name or not new_name.strip():
+            raise HTTPException(status_code=400, detail="New name cannot be empty")
+
+        # Rename the session
+        success = session_manager.rename_session(session_id, new_name)
+        if success:
+            # Get updated session info
+            updated_info = session_manager.get_session_info(session_id)
+            return {
+                "message": "Session renamed successfully",
+                "session_id": session_id,
+                "old_name": session_info.get("display_name", session_info["document_name"]),
+                "new_name": updated_info.get("display_name", updated_info["document_name"])
+            }
+        raise HTTPException(status_code=500, detail="Failed to rename session")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error renaming session {session_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.delete("/api/sessions/{session_id}")
 async def delete_session(session_id: str):
     """Delete a session and its data."""

@@ -156,11 +156,11 @@ class SessionManager:
         Get all active sessions.
 
         Returns:
-            List of tuples: (session_id, document_name, last_updated)
+            List of tuples: (session_id, display_name, last_updated)
         """
         sessions = self.storage.get_all_active_sessions()
         return [
-            (s["session_id"], s["document_name"], s["last_updated"])
+            (s["session_id"], s["display_name"], s["last_updated"])
             for s in sessions
         ]
 
@@ -176,6 +176,31 @@ class SessionManager:
     def clear_session_chat(self, session_id: str) -> bool:
         """Clear chat messages for a session."""
         return self.storage.clear_session_messages(session_id)
+
+    def rename_session(self, session_id: str, new_name: str) -> bool:
+        """Rename a chat session.
+
+        Args:
+            session_id: ID of the session to rename
+            new_name: New display name for the session
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            success = self.storage.rename_session(session_id, new_name)
+            if success:
+                # Update in-memory session if loaded
+                if session_id in self.active_sessions:
+                    session_info = self.storage.get_session(session_id)
+                    if session_info:
+                        # Update both document_name and display_name
+                        self.active_sessions[session_id].document_name = session_info['display_name']
+                        logging.info("Updated in-memory session name for %s", session_id)
+            return success
+        except Exception as e:
+            logging.error("Error renaming session %s: %s", session_id, e)
+            return False
 
     def delete_session(self, session_id: str) -> bool:
         """Delete a session and its embedding store."""

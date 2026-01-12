@@ -52,6 +52,11 @@ export const chatAPI = {
     return response.data;
   },
 
+  renameSession: async (sessionId, newName) => {
+    const response = await api.patch(`/sessions/${sessionId}/rename?new_name=${encodeURIComponent(newName)}`);
+    return response.data;
+  },
+
   deleteSession: async (sessionId) => {
     const response = await api.delete(`/sessions/${sessionId}`);
     return response.data;

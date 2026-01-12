@@ -17,6 +17,7 @@ flake8
 flake8-html
 unstructured
 openpyxl
+msoffcrypto-tool
 python-docx
 scikit-learn
 

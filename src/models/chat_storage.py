@@ -1,6 +1,7 @@
 """
 Chat storage module for persisting conversation history across sessions.
 """
+import re
 import json
 import logging
 import sqlite3
@@ -33,6 +34,7 @@ class ChatStorage:
                 CREATE TABLE IF NOT EXISTS sessions (
                     session_id TEXT PRIMARY KEY,
                     document_name TEXT NOT NULL,
+                    display_name TEXT,
                     collection_name TEXT NOT NULL,
                     documents TEXT DEFAULT '[]',
                     document_batches TEXT DEFAULT '[]',
@@ -46,6 +48,13 @@ class ChatStorage:
             try:
                 cursor.execute("ALTER TABLE sessions ADD COLUMN documents TEXT DEFAULT '[]'")
                 logging.info("Added documents column to sessions table")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
+
+            # Add display_name column if it doesn't exist (for existing databases)
+            try:
+                cursor.execute("ALTER TABLE sessions ADD COLUMN display_name TEXT")
+                logging.info("Added display_name column to sessions table")
             except sqlite3.OperationalError:
                 pass  # Column already exists
 
@@ -82,28 +91,32 @@ class ChatStorage:
         session_id: str,
         document_name: str,
         collection_name: str,
-        documents: List[str] = None
+        documents: List[str] = None,
+        display_name: str = None
     ) -> bool:
         """Create a new chat session with document tracking.
 
         Args:
             session_id: Unique session identifier
-            document_name: Display name for the session
+            document_name: Technical name for the session (cleaned)
             collection_name: Vector store collection name
             documents: List of original document filenames
+            display_name: User-friendly display name (optional, defaults to document_name)
         """
         try:
             documents_json = json.dumps(documents or [])
+            # Use display_name if provided, otherwise use document_name
+            display = display_name if display_name else document_name
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
-                    INSERT INTO sessions (session_id, document_name, collection_name, documents)
-                    VALUES (?, ?, ?, ?)
-                """, (session_id, document_name, collection_name, documents_json))
+                    INSERT INTO sessions (session_id, document_name, display_name, collection_name, documents)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (session_id, document_name, display, collection_name, documents_json))
                 conn.commit()
                 logging.info(
-                    "Created session: %s for document: %s with %d documents",
-                    session_id, document_name, len(documents or [])
+                    "Created session: %s for document: %s (display: %s) with %d documents",
+                    session_id, document_name, display, len(documents or [])
                 )
                 return True
         except sqlite3.IntegrityError:
@@ -119,7 +132,7 @@ class ChatStorage:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
-                    SELECT session_id, document_name, collection_name, documents, document_batches, created_at, last_updated
+                    SELECT session_id, document_name, display_name, collection_name, documents, document_batches, created_at, last_updated
                     FROM sessions
                     WHERE session_id = ? AND is_active = 1
                 """, (session_id,))
@@ -128,24 +141,25 @@ class ChatStorage:
                 if row:
                     # Parse documents JSON
                     try:
-                        documents = json.loads(row[3]) if row[3] else []
+                        documents = json.loads(row[4]) if row[4] else []
                     except (json.JSONDecodeError, TypeError):
                         documents = []
 
                     # Parse document_batches JSON
                     try:
-                        document_batches = json.loads(row[4]) if row[4] else []
+                        document_batches = json.loads(row[5]) if row[5] else []
                     except (json.JSONDecodeError, TypeError):
                         document_batches = []
 
                     return {
                         "session_id": row[0],
                         "document_name": row[1],
-                        "collection_name": row[2],
+                        "display_name": row[2] if row[2] else row[1],  # Fall back to document_name
+                        "collection_name": row[3],
                         "documents": documents,
                         "document_batches": document_batches,
-                        "created_at": row[5],
-                        "last_updated": row[6]
+                        "created_at": row[6],
+                        "last_updated": row[7]
                     }
                 return None
         except Exception as e:
@@ -158,7 +172,7 @@ class ChatStorage:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
-                    SELECT session_id, document_name, collection_name, created_at, last_updated
+                    SELECT session_id, document_name, display_name, collection_name, created_at, last_updated
                     FROM sessions
                     WHERE is_active = 1
                     ORDER BY last_updated DESC
@@ -169,9 +183,10 @@ class ChatStorage:
                     sessions.append({
                         "session_id": row[0],
                         "document_name": row[1],
-                        "collection_name": row[2],
-                        "created_at": row[3],
-                        "last_updated": row[4]
+                        "display_name": row[2] if row[2] else row[1],  # Fall back to document_name
+                        "collection_name": row[3],
+                        "created_at": row[4],
+                        "last_updated": row[5]
                     })
                 return sessions
         except Exception as e:
@@ -266,6 +281,73 @@ class ChatStorage:
             logging.error("Error deleting session: %s", e)
             return False
 
+    def rename_session(self, session_id: str, new_name: str) -> bool:
+        """Rename a session's document_name.
+
+        Args:
+            session_id: Session to rename
+            new_name: New display name for the session
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            # Validate new name
+            if not new_name or not new_name.strip():
+                logging.error("Invalid session name: empty or whitespace")
+                return False
+
+            # Store the original display name (with spaces)
+            original_display_name = new_name.strip()
+
+            # Clean the new name for technical use (same logic as file naming)
+            clean_name = re.sub(r'[^a-zA-Z0-9_-]', '_', new_name.strip())
+            clean_name = re.sub(r'_+', '_', clean_name)
+            clean_name = clean_name.strip('_')
+
+            if not clean_name:
+                logging.error("Invalid session name after cleaning")
+                return False
+
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+
+                # Check if new technical name already exists (excluding current session)
+                cursor.execute("""
+                    SELECT COUNT(*) FROM sessions
+                    WHERE document_name = ? AND session_id != ? AND is_active = 1
+                """, (clean_name, session_id))
+
+                if cursor.fetchone()[0] > 0:
+                    # Add suffix to make it unique (technical name only)
+                    counter = 1
+                    unique_name = f"{clean_name}_{counter}"
+                    while True:
+                        cursor.execute("""
+                            SELECT COUNT(*) FROM sessions
+                            WHERE document_name = ? AND session_id != ? AND is_active = 1
+                        """, (unique_name, session_id))
+                        if cursor.fetchone()[0] == 0:
+                            clean_name = unique_name
+                            break
+                        counter += 1
+                        unique_name = f"{clean_name}_{counter}"
+
+                # Update both document_name (technical) and display_name (user-friendly)
+                cursor.execute("""
+                    UPDATE sessions
+                    SET document_name = ?, display_name = ?
+                    WHERE session_id = ?
+                """, (clean_name, original_display_name, session_id))
+
+                conn.commit()
+                logging.info("Renamed session %s to: %s (display: %s)", session_id, clean_name, original_display_name)
+                return True
+
+        except Exception as e:
+            logging.error("Error renaming session: %s", e)
+            return False
+
     def update_session_timestamp(self, session_id: str) -> bool:
         """Update the last_updated timestamp for a session."""
         try:
@@ -346,69 +428,7 @@ class ChatStorage:
             logging.error("Error appending documents to session: %s", e)
             return False
 
-    def append_documents_to_session(self, session_id: str, new_documents: List[str]) -> bool:
-        """Append new documents to an existing session.
 
-        Args:
-            session_id: Session to update
-            new_documents: List of new document filenames to add
-
-        Returns:
-            True if successful, False otherwise
-        """
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
-
-                # Get current documents and batches
-                cursor.execute("""
-                    SELECT documents, document_batches
-                    FROM sessions
-                    WHERE session_id = ? AND is_active = 1
-                """, (session_id,))
-
-                row = cursor.fetchone()
-                if not row:
-                    logging.error("Session %s not found", session_id)
-                    return False
-
-                # Parse existing documents
-                try:
-                    current_docs = json.loads(row[0]) if row[0] else []
-                    current_batches = json.loads(row[1]) if row[1] else []
-                except (json.JSONDecodeError, TypeError):
-                    current_docs = []
-                    current_batches = []
-
-                # Create new batch entry
-                new_batch = {
-                    "documents": new_documents,
-                    "added_at": datetime.now().isoformat()
-                }
-
-                # Update lists
-                updated_docs = current_docs + new_documents
-                updated_batches = current_batches + [new_batch]
-
-                # Update database
-                cursor.execute("""
-                    UPDATE sessions
-                    SET documents = ?,
-                        document_batches = ?,
-                        last_updated = CURRENT_TIMESTAMP
-                    WHERE session_id = ?
-                """, (json.dumps(updated_docs), json.dumps(updated_batches), session_id))
-
-                conn.commit()
-                logging.info(
-                    "Appended %d documents to session %s (total: %d)",
-                    len(new_documents), session_id, len(updated_docs)
-                )
-                return True
-
-        except Exception as e:
-            logging.error("Error appending documents to session: %s", e)
-            return False
 
 
 # Global instance
