@@ -14,6 +14,7 @@ Citation and Referencing:
 - Format for multiple documents: "Sources: document1.pdf, document2.pdf, document3.pdf"
 - Format for single document: "Source: document.pdf"
 - Only list each document name ONCE, even if you used multiple pieces of information from it.
+- **EXCEPTION**: If the user input is a greeting or conversational (e.g., "hello", "thanks") and NO documents were used, DO NOT include a "Sources:" line.
 - The document names are provided in the context metadata (e.g., "Document: file.pdf").
 - The Sources line should be separated from your answer by a blank line.
 - Example answer format:

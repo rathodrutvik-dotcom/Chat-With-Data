@@ -65,93 +65,57 @@ def analyze_query(question: str, available_documents: List[str] = None, chat_his
                 history_context = f"\n\nRecent Conversation History:\n" + "\n".join(history_lines)
 
         prompt = ChatPromptTemplate.from_template(
-            """Analyze the following user question for a RAG (Retrieval-Augmented Generation) system that processes multiple documents.{doc_context}{history_context}
-            
-            CRITICAL INSTRUCTIONS:
-            
-            1. **Question Decomposition**: If the question contains multiple distinct intents, break it down into separate sub-questions.
-               When breaking down questions, resolve pronouns ("them", "it", "they") by using the conversation history context:
-               - "How many projects? Give me names of them" → ["How many projects?", "Give me names of the projects"]
-               - "Who is the lead? What is their role?" → ["Who is the lead?", "What is the role of the lead?"]
-               - If conversation history mentions "AI-Powered Document project" and user asks "what about it?", resolve "it" to "AI-Powered Document project"
-               - Use the most recent relevant entity from conversation history to replace vague pronouns
-            
-            2. **Retrieval Strategy Selection** (MOST IMPORTANT):
-               
-               Understand the user's INTENT, not just keywords. Consider paraphrases and implicit needs.
-               
-               Use "conversational" strategy for:
-               - Greetings: "hello", "hi", "good morning"
-               - Gratitude: "thanks", "thank you", "great"
-               - Simple acknowledgments: "ok", "I see", "understood"
-               - Questions about the AI itself NOT related to documents: "who are you", "what is your name"
-               - Self-introductions: "my name is X", "call me Y", "I am Z"
-               - Questions about the user's identity: "what is my name", "who am i", "do you know me"
-               
-               Use "exhaustive" strategy when the question requires information from MULTIPLE sources:
-               - Listing/enumerating: "list all", "what are all", "give me all", "show me all", "name all"
-                 * Also: "enumerate", "tell me about each", "describe every", "mention all"
-               - Counting/quantifying: "how many", "count", "total number", "number of"
-                 * Also: "quantity of", "amount of", "how much"
-               - Summarizing across documents: "summarize all", "overview of all", "tell me about all"
-                 * Also: "give me summary", "what's the overview"
-               - Multiple items: "what projects", "which documents", "all locations", "every person"
-                 * Also: "the projects" (when multiple exist), "project costs" (implies all projects)
-               - Comparative analysis: "compare", "differences between", "similarities across"
-               
-               IMPORTANT: If the question COULD involve multiple documents/items, use exhaustive.
-               Example: "project budgets" → exhaustive (assumes multiple projects exist)
-               Example: "tell me about projects" → exhaustive (multiple projects implied)
-               
-               EXAMPLES OF EXHAUSTIVE QUERIES:
-               - "list out all projects name" → exhaustive
-               - "how many projects are there" → exhaustive
-               - "what are all the locations mentioned" → exhaustive
-               - "give me names of all team members" → exhaustive
-               - "summarize all project budgets" → exhaustive
-               - "what projects exist" → exhaustive
-               - "show all timelines" → exhaustive
-               
-               Use "semantic" strategy ONLY for:
-               - Specific fact retrieval: "what is the budget of Project X"
-               - Single entity queries: "who is the lead of Alpha project"
-               - Targeted information: "what is the deadline for Project Y"
-               - Definition/explanation: "what does term X mean"
-               
-               EXAMPLES OF SEMANTIC QUERIES:
-               - "what is the budget of AI-Powered Document Intelligence Platform" → semantic
-               - "who is the project lead for Project Alpha" → semantic
-               - "when is the deadline for the first milestone" → semantic
-            
-            3. **Question Type Classification**:
-               - "count": Questions asking for quantities (how many, count, total number)
-               - "list": Questions asking for enumeration (list all, what are, give me names)
-               - "timeline": Questions about schedules, dates, deadlines
-               - "general": Other informational queries
-               - "chat": Conversational inputs (hi, thanks, etc)
-            
-            4. **Metadata Filters**:
-               Extract filters ONLY for explicit structural attributes like "section: budget" or "type: table".
-               Do NOT create metadata filters for content-based terms (project names, people, locations, dates).
-               Return empty filters {} unless there's an explicit structural constraint.
-            
-            IMPORTANT: When in doubt between exhaustive and semantic, lean towards exhaustive for any query that 
-            might require information from multiple documents or sources.
-            
-            Output strictly JSON (no markdown formatting):
-            {{
-                "sub_questions": [
-                    {{
-                        "question": "text of sub question with pronouns resolved",
-                        "type": "count|list|timeline|general|chat",
-                        "strategy": "exhaustive|semantic|conversational",
-                        "filters": {{}}
-                    }}
-                ]
-            }}
-            
-            User Question: {question}
-            """
+            """You are an intent analyzer for a multi-document RAG system.{doc_context}{history_context}
+
+TASKS:
+
+1. Question Decomposition  
+- If the user question has multiple intents, split it into independent sub-questions.  
+- Resolve pronouns (it, they, them, this) using the most recent relevant entity from conversation history.
+
+2. Retrieval Strategy Selection (CRITICAL)  
+Choose ONE strategy per sub-question based on intent:
+
+- conversational  
+  Use for greetings, acknowledgments, gratitude, self-introduction, or questions about the AI/user NOT related to documents.
+
+- exhaustive  
+  Use when the query implies MULTIPLE documents or entities, including:
+  • listing, counting, summarizing, comparing  
+  • plural or collective references (projects, documents, timelines, budgets)  
+  • cases where multiple sources may be needed
+
+- semantic  
+  Use ONLY for specific, single-entity or single-fact queries.
+
+Rule: If unsure between exhaustive and semantic, choose exhaustive.
+
+3. Question Type Classification  
+Assign one type:
+- count: quantities or totals  
+- list: enumeration  
+- timeline: dates, schedules, deadlines  
+- general: other factual queries  
+- chat: conversational input
+
+4. Metadata Filters  
+Extract filters ONLY if the user explicitly specifies structural constraints (e.g., section, format, type).  
+Do NOT infer filters from content. Default to {{}}.
+
+OUTPUT FORMAT (strict JSON, no markdown):
+{{
+  "sub_questions": [
+    {{
+      "question": "resolved sub-question text",
+      "type": "count|list|timeline|general|chat",
+      "strategy": "exhaustive|semantic|conversational",
+      "filters": {{}}
+    }}
+  ]
+}}
+
+User Question: {question}
+"""
         )
         
         chain = prompt | llm | JsonOutputParser()
@@ -212,6 +176,21 @@ def synthesize_answers(sub_answers: List[Dict[str, str]], original_question: str
     
     # Filter out empty/unavailable answers
     valid_answers = []
+    
+    # improved negative detection patterns
+    negative_patterns = [
+        "not available",
+        "no information found",
+        "could not find",
+        "cannot find",
+        "does not mention",
+        "unable to find",
+        "no mention of",
+        "information is not available",
+        "no relevant information",
+        "i cannot confirm"
+    ]
+    
     for sub_answer in sub_answers:
         answer_text = sub_answer.get("answer", "").strip()
         if not answer_text:
@@ -219,15 +198,31 @@ def synthesize_answers(sub_answers: List[Dict[str, str]], original_question: str
         
         # Check if answer has useful content
         answer_lower = answer_text.lower()
-        is_empty_answer = (
-            "not available" in answer_lower or
-            "information is not available" in answer_lower
-        )
+        is_empty_answer = any(pattern in answer_lower for pattern in negative_patterns)
         
+        # Special case: if the answer is very short and contains negative words, it's likely empty
+        if len(answer_text) < 100 and is_empty_answer:
+             pass # It is empty
+        # If it's long, it might be "I could not find X, but found Y..." - so we keep it if it's long? 
+        # Actually, safer to trust the patterns for "I could not find" at the start.
+        elif answer_lower.startswith("i could not find") or answer_lower.startswith("i cannot find"):
+             is_empty_answer = True
+        else:
+             is_empty_answer = False # Keep it if we are not sure
+             
+        # Override: if we detected 'not available' in the simple check above, trust it
+        if any(pattern in answer_lower for pattern in ["not available in the provided documents", "information is not available"]):
+            is_empty_answer = True
+
         if not is_empty_answer:
             valid_answers.append(sub_answer)
     
     if not valid_answers:
+        # If all were filtered out, check if we have any original answers. 
+        # If so, return the first one (fallback) instead of a generic message, 
+        # unless it was truly empty.
+        if sub_answers and sub_answers[0].get("answer"):
+             return sub_answers[0]["answer"]
         return "The requested information is not available in the provided documents."
     
     # If only one valid answer, return it
@@ -238,7 +233,7 @@ def synthesize_answers(sub_answers: List[Dict[str, str]], original_question: str
     try:
         llm = get_llm()
         if not llm:
-            raise RuntimeError("LLM is required for answer synthesis. Please configure GEMINI_API_KEY.")
+            return valid_answers[0]["answer"]
         
         # Build context for synthesis
         answers_text = ""
@@ -254,15 +249,15 @@ def synthesize_answers(sub_answers: List[Dict[str, str]], original_question: str
             {answers}
             
             CRITICAL INSTRUCTIONS:
-            1. **Deduplicate Information**: If the same fact appears in multiple answers, mention it ONLY ONCE.
-            2. **Clean Structure**: Organize information logically based on what was asked:
-               - If asked about multiple attributes (location, budget, timeline), present each clearly
-               - Use bullet points or clean formatting for multiple distinct pieces of information
-               - Start each distinct piece of info on a new line when appropriate
-            3. **Preserve Citations**: Keep all [document.pdf] citations from the original answers
-            4. **No Meta-Commentary**: Don't say "According to answer 1" or "Based on the answers"
-            5. **Natural Flow**: Write as if answering the original question directly
-            6. **Avoid Repetition**: If budget is mentioned twice, include it only once
+            1. **Prioritize Information**: If one answer has information and another says "not found", ONLY use the one with information.
+            2. **Ignore Negatives**: Completely ignore statements like "I could not find..." if other answers provide the facts.
+            3. **Deduplicate**: Mention each fact only once.
+            4. **Clean Structure**: 
+               - Combine lists if multiple answers list items.
+               - Used bullet points for distinct items.
+            5. **Preserve Citations**: Keep [document.pdf] citations.
+            6. **No Meta-Commentary**: Don't mention "Sub-answer 1" or "retrieval".
+            7. **Consistency**: Ensure the final answer doesn't contradict itself.
             
             Synthesized Answer:"""
         )
@@ -277,7 +272,8 @@ def synthesize_answers(sub_answers: List[Dict[str, str]], original_question: str
         
     except Exception as e:
         logging.error(f"Error in LLM-based synthesis: {e}")
-        raise RuntimeError(f"Answer synthesis failed: {e}") from e
+        # Fallback to concatenating with newlines
+        return "\n\n".join([a["answer"] for a in valid_answers])
 
 
 __all__ = [

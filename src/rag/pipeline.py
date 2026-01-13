@@ -652,7 +652,10 @@ def process_user_question(user_input, session: RagSession, chat_history=None):
             retrieval_mode = strategy['mode']
 
             # Extract source documents
-            sources = extract_source_documents(relevant_context)
+            if retrieval_mode == 'conversational':
+                sources = []
+            else:
+                sources = extract_source_documents(relevant_context)
 
             if retrieval_mode == 'conversational':
                 context_text = "No documents needed for this conversational turn."
