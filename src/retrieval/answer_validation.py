@@ -7,8 +7,7 @@ and warns users appropriately to avoid overconfident wrong answers.
 
 import logging
 from typing import List, Dict
-from config.settings import USE_GROQ, USE_GEMINI, GROQ_MODEL, GEMINI_MODEL
-from langchain_groq import ChatGroq
+from config.settings import GEMINI_MODEL
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
@@ -16,11 +15,7 @@ from langchain_core.output_parsers import JsonOutputParser
 
 def get_llm():
     """Helper to get the configured LLM for validation."""
-    if USE_GEMINI:
-        return ChatGoogleGenerativeAI(model=GEMINI_MODEL, temperature=0.0)
-    elif USE_GROQ:
-        return ChatGroq(model=GROQ_MODEL, temperature=0.0)
-    return None
+    return ChatGoogleGenerativeAI(model=GEMINI_MODEL, temperature=0.0)
 
 
 def validate_answer_with_llm(
@@ -49,8 +44,6 @@ def validate_answer_with_llm(
     """
     try:
         llm = get_llm()
-        if not llm:
-            raise RuntimeError("LLM is required for answer validation. Please configure USE_GROQ or USE_GEMINI.")
 
         # Extract document information
         documents_seen = set()

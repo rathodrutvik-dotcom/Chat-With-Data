@@ -94,7 +94,7 @@ Now the AI creates your answer:
 - Formats clearly with document labels
 
 **LLM Processing**:
-- Sends the relevant chunks to the AI (Groq or Gemini)
+- Sends the relevant chunks to the AI (Gemini)
 - AI reads through all chunks
 - Synthesizes information into a coherent answer
 - Includes citations showing which documents were used

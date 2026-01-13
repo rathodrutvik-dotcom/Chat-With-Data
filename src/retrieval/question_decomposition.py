@@ -9,8 +9,7 @@ import logging
 import re
 from typing import List, Dict, Optional, Any
 
-from config.settings import USE_GROQ, USE_GEMINI, GROQ_MODEL, GEMINI_MODEL
-from langchain_groq import ChatGroq
+from config.settings import GEMINI_MODEL
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser, StrOutputParser
@@ -18,11 +17,7 @@ from langchain_core.output_parsers import JsonOutputParser, StrOutputParser
 
 def get_llm():
     """Helper to get the configured LLM."""
-    if USE_GEMINI:
-        return ChatGoogleGenerativeAI(model=GEMINI_MODEL, temperature=0.0)
-    elif USE_GROQ:
-        return ChatGroq(model=GROQ_MODEL, temperature=0.0)
-    return None
+    return ChatGoogleGenerativeAI(model=GEMINI_MODEL, temperature=0.0)
 
 
 def analyze_query(question: str, available_documents: List[str] = None, chat_history: List[Dict] = None) -> List[Dict[str, Any]]:
@@ -234,7 +229,7 @@ def synthesize_answers(sub_answers: List[Dict[str, str]], original_question: str
     try:
         llm = get_llm()
         if not llm:
-            raise RuntimeError("LLM is required for answer synthesis. Please configure USE_GROQ or USE_GEMINI.")
+            raise RuntimeError("LLM is required for answer synthesis. Please configure GEMINI_API_KEY.")
         
         # Build context for synthesis
         answers_text = ""

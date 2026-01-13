@@ -9,28 +9,16 @@ This application combines document processing, vector embeddings, and LLM capabi
 - **Document Upload**: Support for PDF, DOCX, and XLSX files
 - **Persistent Conversations**: Chat history is saved automatically and survives page refreshes
 - **Multiple Sessions**: Manage multiple document collections with independent chat histories
-- **RAG Pipeline**: Uses Chroma vector store, LangChain, and configurable LLM (Groq or Gemini) for accurate, contextual responses
-- **Flexible LLM Support**: Choose between Groq or Google Gemini as your LLM provider
+- **RAG Pipeline**: Uses Chroma vector store, LangChain, and Google Gemini LLM for accurate, contextual responses
 - **Session Management**: Switch between different document sessions seamlessly
-
-## Architecture
-
-The application follows a modular architecture:
-
-- **UI Layer**: Gradio interface for document upload and chat
-- **RAG Pipeline**: Document processing, chunking, embedding, and retrieval
-- **Session Management**: Manages multiple document sessions and chat histories
-- **Storage**: SQLite database for persistent chat storage, Chroma for vector embeddings
 
 ## Getting Started
 
 ### Prerequisites
 
 - Python 3.8 or higher
-- At least one LLM API key:
-  - Groq API key ([Get one here](https://console.groq.com))
-  - OR Google Gemini API key ([Get one here](https://makersuite.google.com/app/apikey))
-- (Optional) Ngrok auth token for public sharing
+- Node.js 16 or higher (for React frontend)
+- Google Gemini API key ([Get one here](https://makersuite.google.com/app/apikey))
 
 ### Installation Steps
 
@@ -38,56 +26,95 @@ The application follows a modular architecture:
 
 ```bash
 git clone https://github.com/[your_repo_name]
-cd chat-with-your-data
+cd Chat-With-Data
 ```
 
-#### Step 2: Create Virtual Environment
+#### Step 2: Configure Environment Variables
+
+Create a `.env` file in the project root:
+
+```bash
+# API Keys
+GEMINI_API_KEY=your_gemini_api_key_here
+
+# Model Selection (optional, defaults shown)
+GEMINI_MODEL=gemini-2.5-flash-lite
+```
+
+#### Step 3: Set Up Python Backend
+
+**Create and activate virtual environment:**
 
 ```bash
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 ```
 
-#### Step 3: Install Dependencies
+**Install Python dependencies:**
 
 ```bash
 pip install -r requirements.txt
 ```
 
-#### Step 4: Configure Environment Variables
+#### Step 4: Set Up React Frontend
 
-Create a `.env` file in the project root:
+**Navigate to frontend directory and install dependencies:**
 
 ```bash
-# API Keys (at least one required)
-GROQ_API_KEY=your_groq_api_key_here
-GEMINI_API_KEY=your_gemini_api_key_here
-
-# LLM Provider Configuration
-USE_GROQ=true      # Set to true to enable Groq
-USE_GEMINI=false   # Set to true to enable Gemini
-
-# Model Selection (optional, defaults shown)
-GROQ_MODEL=llama-3.1-8b-instant
-GEMINI_MODEL=gemini-2.0-flash-exp
-
-# Optional
-NGROK_AUTH_TOKEN=<your_ngrok_token>
+cd frontend
+npm install
+cd ..
 ```
 
-**LLM Provider Priority:**
-- If both `USE_GROQ` and `USE_GEMINI` are enabled, Gemini will be used by default
-- At least one provider must be enabled
-- You only need the API key for the provider you're using
+### Running the Application
 
-#### Step 5: Run the Application
+#### Option 1: Quick Start (Recommended)
+
+Use the provided startup script to run both backend and frontend together:
 
 ```bash
+./start.sh
+```
+wait upto 5 seconds to ready backend server and then visit  `http://localhost:5173`, your app is ready!
+
+This will start:
+- Python API server on `http://localhost:8000`
+- React frontend on `http://localhost:5173`
+
+#### Option 2: Manual Start
+
+**Terminal 1 - Start Python API Server:**
+
+```bash
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+cd src
+python api_server.py
+```
+
+The API server will run on `http://localhost:8000`
+
+**Terminal 2 - Start React Frontend:**
+
+```bash
+cd frontend
+npm run dev
+```
+
+The React app will run on `http://localhost:5173`
+
+**Access the application:** Open your browser and navigate to `http://localhost:5173`
+
+#### Option 3: Testing Backend Only (Gradio UI)
+
+For testing the Python backend independently without the React frontend:
+
+```bash
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 cd src
 python main.py
 ```
 
-The application will start and provide a local URL (typically `http://127.0.0.1:7860`).
+This starts a Gradio test interface on `http://127.0.0.1:7860`
 
 ## Project Structure
 
@@ -132,12 +159,6 @@ Chat-With-Data/
 
 ## Additional Tools
 
-### Generate Flake8 Report
-
-```bash
-./generate_flake8_reports.sh
-```
-
 ### View Database
 
 ```bash
@@ -146,10 +167,9 @@ sqlite3 src/logs/chat_history.db
 
 ## Technology Stack
 
-- **UI**: Gradio
-- **LLM**: Configurable (Groq or Google Gemini)
-  - Groq: llama-3.1-8b-instant (default)
-  - Gemini: gemini-2.0-flash-exp (default)
+- **Frontend**: React + Vite + Tailwind CSS
+- **Backend**: Python FastAPI (API Server) + Gradio (Testing UI)
+- **LLM**: Google Gemini (gemini-2.5-flash-lite default)
 - **Vector Store**: Chroma
 - **Embeddings**: sentence-transformers/all-MiniLM-L6-v2
 - **Framework**: LangChain
@@ -162,4 +182,3 @@ sqlite3 src/logs/chat_history.db
 - Chat history is stored in `src/logs/chat_history.db`
 - Processing time increases with larger files
 - Internet connection required for LLM API access
-- You can switch between Groq and Gemini by updating the `.env` file

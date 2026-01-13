@@ -28,7 +28,7 @@ Vector Store (Chroma) + Database (SQLite)
 3. **Vector Storage** → Embeddings stored in Chroma vector store
 4. **Query Processing** → User question processed through RAG pipeline
 5. **Retrieval** → Relevant chunks retrieved using MMR (Maximal Marginal Relevance)
-6. **Response Generation** → Groq LLM generates contextual answer with citations
+6. **Response Generation** → Gemini LLM generates contextual answer with citations
 7. **Storage** → Conversation saved to SQLite database
 
 ## Workflows
@@ -149,7 +149,7 @@ Switch to Doc B → Previous Chat Loads
 | History not loading | Select session from dropdown |
 | Can't send messages | Ensure session is selected |
 | Upload fails | Verify file format (.pdf, .docx, .xlsx) |
-| API error | Check GROQ_API_KEY in .env file |
+| API error | Check GEMINI_API_KEY in .env file |
 
 ## File Locations
 
@@ -169,7 +169,4 @@ python src/main.py
 
 # View database
 sqlite3 src/logs/chat_history.db
-
-# Generate flake8 report
-./generate_flake8_reports.sh
 ```

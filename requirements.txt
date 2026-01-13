@@ -1,6 +1,5 @@
 langchain
 langchain_chroma
-langchain-groq
 langchain-google-genai
 langchain_openai
 langchain_ollama

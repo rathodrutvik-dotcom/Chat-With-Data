@@ -83,9 +83,6 @@ CHAT_SNIPPET_MAX_CHARS = 160
 CROSS_ENCODER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 
 # LLM Provider Configuration
-USE_GROQ = os.getenv("USE_GROQ", "true").lower() == "true"
-USE_GEMINI = os.getenv("USE_GEMINI", "false").lower() == "true"
-GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
 
 # Embeddings
@@ -117,9 +114,6 @@ __all__ = [
     "CONTEXT_TOKEN_BUDGET",
     "CHAT_SNIPPET_MAX_CHARS",
     "CROSS_ENCODER_MODEL",
-    "USE_GROQ",
-    "USE_GEMINI",
-    "GROQ_MODEL",
     "GEMINI_MODEL",
     "embedding_model",
 ]

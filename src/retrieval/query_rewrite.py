@@ -4,7 +4,7 @@ Docstring for retrieval.query_rewrite
 Handles rewriting user queries to be self-contained and generating query variations using LLMs.
 - Resolves pronouns and references based on chat history
 - Generates diverse query variations to improve retrieval coverage
-- Utilizes configurable LLM providers (Groq, Gemini)
+- Utilizes Gemini LLM
 """
 
 
@@ -13,8 +13,7 @@ from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_groq import ChatGroq
-from config.settings import USE_GROQ, USE_GEMINI, GROQ_MODEL, GEMINI_MODEL
+from config.settings import GEMINI_MODEL
 from config.settings import CHAT_SNIPPET_MAX_CHARS, MAX_MULTI_QUERIES
 
 
@@ -53,15 +52,7 @@ def rewrite_query(user_input, chat_history):
 
     try:
         # Initialize LLM for rewriting (lightweight)
-        llm = None
-        if USE_GEMINI:
-            llm = ChatGoogleGenerativeAI(model=GEMINI_MODEL, temperature=0.1)
-        elif USE_GROQ:
-            llm = ChatGroq(model=GROQ_MODEL, temperature=0.1)
-
-        if not llm:
-            logging.warning("No LLM available for query rewriting, falling back to original.")
-            return trimmed
+        llm = ChatGoogleGenerativeAI(model=GEMINI_MODEL, temperature=0.1)
 
         # Format history string
         history_str = ""
@@ -117,14 +108,7 @@ def generate_query_variations(rewritten_query, chat_history):
 
     logging.info("Generating query variations with LLM...")
     try:
-        llm = None
-        if USE_GEMINI:
-            llm = ChatGoogleGenerativeAI(model=GEMINI_MODEL, temperature=0.3)
-        elif USE_GROQ:
-            llm = ChatGroq(model=GROQ_MODEL, temperature=0.3)
-
-        if not llm:
-            return [rewritten_query]
+        llm = ChatGoogleGenerativeAI(model=GEMINI_MODEL, temperature=0.3)
 
         prompt = ChatPromptTemplate.from_template(
             """Generate 3-5 diverse search query variations for the user question to maximize retrieval coverage.

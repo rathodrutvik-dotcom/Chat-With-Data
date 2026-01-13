@@ -25,7 +25,6 @@ from rag.pipeline import process_user_question, proceed_input, add_documents_to_
 
 # Load environment variables
 load_dotenv()
-os.environ["GROQ_API_KEY"] = os.getenv("GROQ_API_KEY")
 os.environ["GOOGLE_API_KEY"] = os.getenv("GEMINI_API_KEY")  # Gemini uses GOOGLE_API_KEY
 
 # Logging is already configured in settings.py - no need to reconfigure
