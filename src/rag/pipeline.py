@@ -339,6 +339,35 @@ def retrieve_relevant_chunks(user_input, session: RagSession, chat_history=None,
         # Filter duplicates
         unique_entries = filter_near_duplicates(reranked)
         logging.info("After deduplication: %d unique entries", len(unique_entries))
+        
+        # Force include chunk-0 for name/address queries
+        if any(keyword in user_input.lower() for keyword in ['name', 'address', 'email', 'phone', 'contact']):
+            logging.info("Detected name/address query - forcing inclusion of early chunks")
+            # Get all available chunks from vectorstore to find chunk-0
+            all_chunks = session.vectorstore.get()
+            if all_chunks and 'ids' in all_chunks and 'documents' in all_chunks and 'metadatas' in all_chunks:
+                for i, metadata in enumerate(all_chunks['metadatas']):
+                    chunk_id = metadata.get('chunk_id', '')
+                    # Look for chunk-0 or chunk-1 from resume or relevant documents
+                    if 'chunk-0' in chunk_id or 'chunk_0' in chunk_id:
+                        # Check if this chunk is already in unique_entries
+                        already_included = any(
+                            entry["doc"].metadata.get("chunk_id") == chunk_id 
+                            for entry in unique_entries
+                        )
+                        if not already_included:
+                            # Create document and add to unique_entries
+                            from langchain_core.documents import Document
+                            early_chunk_doc = Document(
+                                page_content=all_chunks['documents'][i],
+                                metadata=metadata
+                            )
+                            unique_entries.insert(0, {
+                                "doc": early_chunk_doc,
+                                "score": 1.0,  # High score to ensure inclusion
+                                "rerank_score": 1.0
+                            })
+                            logging.info("Force-added %s to context for name/address query", chunk_id)
 
     # Assemble context with document diversity - pass question_type for smarter selection
     context_entries = assemble_context_entries(unique_entries, question_type=question_type)

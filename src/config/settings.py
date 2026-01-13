@@ -46,12 +46,18 @@ logging.basicConfig(
     handlers=[file_handler, console_handler]
 )
 
-# Configure uvicorn loggers to use our handlers
+# Configure uvicorn loggers to use our handlers and prevent propagation
 uvicorn_logger = logging.getLogger("uvicorn")
 uvicorn_logger.handlers = [file_handler, console_handler]
+uvicorn_logger.propagate = False  # Prevent propagation to root logger
+
+uvicorn_error = logging.getLogger("uvicorn.error")
+uvicorn_error.handlers = [file_handler, console_handler]
+uvicorn_error.propagate = False  # Prevent propagation to root logger
 
 uvicorn_access = logging.getLogger("uvicorn.access")
 uvicorn_access.handlers = [file_handler, console_handler]
+uvicorn_access.propagate = False  # Prevent propagation to root logger
 
 logger = logging.getLogger(__name__)
 logger.info(f"Logging configured - Daily log file: {LOG_FILE}")
@@ -80,7 +86,7 @@ CROSS_ENCODER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 USE_GROQ = os.getenv("USE_GROQ", "true").lower() == "true"
 USE_GEMINI = os.getenv("USE_GEMINI", "false").lower() == "true"
 GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash-exp")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
 
 # Embeddings
 embedding_model = HuggingFaceEmbeddings(
