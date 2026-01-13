@@ -63,6 +63,13 @@ def determine_retrieval_strategy(question: str, strategy_hint: str = None, metad
             'k': None,
             'metadata_filter': final_filters
         }
+    elif mode == 'conversational':
+        logging.info("Retrieval strategy: CONVERSATIONAL (No retrieval)")
+        return {
+            'mode': 'conversational',
+            'k': 0,
+            'metadata_filter': None
+        }
     else:
         # Semantic Mode - use standard k value
         k_value = 50
@@ -125,7 +132,8 @@ def build_rag_chain(system_prompt):
             ("system", system_prompt),
             (
                 "human",
-                "Question: {question}",
+                # Include history in the prompt template to support conversational flow
+                "Conversation History:\n{history}\n\nContext from Documents:\n{context}\n\nQuestion: {question}",
             ),
         ]
     )
@@ -156,6 +164,12 @@ def retrieve_relevant_chunks(user_input, session: RagSession, chat_history=None,
 
     # Step 0: Determine retrieval strategy
     strategy = determine_retrieval_strategy(user_input, strategy_hint, metadata_filters)
+    
+    if strategy['mode'] == 'conversational':
+        print("--- DEBUG: RETRIEVAL STRATEGY: CONVERSATIONAL ---", flush=True)
+        print("Skipping retrieval for conversational input.", flush=True)
+        # Return empty context and original input
+        return [], user_input
 
     if strategy['mode'] == 'exhaustive':
         # EXHAUSTIVE MODE: Retrieve all matching chunks without TopK limit
@@ -444,7 +458,42 @@ def process_user_question(user_input, session: RagSession, chat_history=None):
 
         # Always use LLM to analyze query - this is the primary path
         # LLM determines strategy, filters, and multi-intent decomposition
-        sub_questions = analyze_query(user_input, available_documents=available_docs, chat_history=chat_history)
+        
+        # OPTIMIZATION: Check for obvious conversational inputs to skip LLM analysis
+        conversational_triggers = {
+            "hi", "hello", "hey", "greetings", 
+            "thanks", "thank you", "thx", "thanks!", "thank you!", 
+            "ok", "okay", "cool", "great", "perfect", "awesome",
+            "bye", "goodbye", "help"
+        }
+        
+        # Phrases that indicate conversation even if sentence is longer
+        conversational_prefixes = [
+            "my name is", "call me", "i am chat", "i'm chat", "nice to meet",
+            "what is my name", "who am i", "do you know my name", "do you remember me",
+            "say my name"
+        ]
+        
+        cleaned_input = user_input.lower().strip("!.,? ")
+        
+        is_conversational = False
+        if cleaned_input in conversational_triggers:
+            is_conversational = True
+        elif len(cleaned_input.split()) <= 3 and any(trigger == cleaned_input for trigger in conversational_triggers):
+            is_conversational = True
+        elif any(cleaned_input.startswith(prefix) for prefix in conversational_prefixes):
+             is_conversational = True
+            
+        if is_conversational:
+            logging.info("⚡ Heuristic: Detected fast conversational input: '%s'", user_input)
+            sub_questions = [{
+                "question": user_input, 
+                "type": "chat", 
+                "strategy": "conversational", 
+                "filters": {}
+            }]
+        else:
+            sub_questions = analyze_query(user_input, available_documents=available_docs, chat_history=chat_history)
 
         # Check for explicit document filter in the question
         doc_filter = extract_document_filter_from_question(user_input)
@@ -605,22 +654,26 @@ def process_user_question(user_input, session: RagSession, chat_history=None):
             # Extract source documents
             sources = extract_source_documents(relevant_context)
 
-            context_text = format_context_with_metadata(relevant_context)
-
-            # Debug: Log the context being sent to LLM
-            print("=" * 80, flush=True)
-            print("----- DEBUG: LLM CONTEXT START -----", flush=True)
-            print(context_text, flush=True)
-            print("----- DEBUG: LLM CONTEXT END -----", flush=True)
-            print("=" * 80, flush=True)
-
-            # History is only used for query rewriting, not sent to LLM
-            # This prevents conversation memory from contaminating answers
-            payload = {
-                "context": context_text,
-                "history": "None",  # Isolated - rely only on retrieved context
-                "question": resolved_question,  # Use resolved question instead of original
-            }
+            if retrieval_mode == 'conversational':
+                context_text = "No documents needed for this conversational turn."
+                history_text = format_chat_history(chat_history)
+                payload = {
+                    "context": context_text,
+                    "history": history_text,
+                    "question": resolved_question,
+                }
+                print("--- DEBUG: CONVERSATIONAL MODE ---", flush=True)
+                print("Using chat history for context.", flush=True)
+            else:
+                context_text = format_context_with_metadata(relevant_context)
+                
+                # History is only used for query rewriting, not sent to LLM
+                # This prevents conversation memory from contaminating answers
+                payload = {
+                    "context": context_text,
+                    "history": "None",  # Isolated - rely only on retrieved context
+                    "question": resolved_question,  # Use resolved question instead of original
+                }
 
             print("----- DEBUG: INVOKING LLM -----", flush=True)
             if resolved_question != user_input:
@@ -634,12 +687,22 @@ def process_user_question(user_input, session: RagSession, chat_history=None):
             print(f"Answer generated successfully: {len(answer_text)} chars", flush=True)
 
             # Use LLM-based validation for better accuracy (with heuristic fallback)
-            validation_result = validate_answer_with_llm(
-                user_input,
-                answer_text,
-                relevant_context,
-                retrieval_mode=retrieval_mode
-            )
+            if retrieval_mode == 'conversational':
+                validation_result = {
+                    "is_complete": True,
+                    "confidence": "high",
+                    "warning": None,
+                    "reasoning": "Conversational query - no validation needed",
+                    "num_chunks": 0,
+                    "num_documents": 0
+                }
+            else:
+                validation_result = validate_answer_with_llm(
+                    user_input,
+                    answer_text,
+                    relevant_context,
+                    retrieval_mode=retrieval_mode
+                )
             logging.info("Answer validation: confidence=%s, complete=%s",
                          validation_result["confidence"], validation_result["is_complete"])
 

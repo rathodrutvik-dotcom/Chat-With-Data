@@ -80,6 +80,14 @@ def analyze_query(question: str, available_documents: List[str] = None, chat_his
                
                Understand the user's INTENT, not just keywords. Consider paraphrases and implicit needs.
                
+               Use "conversational" strategy for:
+               - Greetings: "hello", "hi", "good morning"
+               - Gratitude: "thanks", "thank you", "great"
+               - Simple acknowledgments: "ok", "I see", "understood"
+               - Questions about the AI itself NOT related to documents: "who are you", "what is your name"
+               - Self-introductions: "my name is X", "call me Y", "I am Z"
+               - Questions about the user's identity: "what is my name", "who am i", "do you know me"
+               
                Use "exhaustive" strategy when the question requires information from MULTIPLE sources:
                - Listing/enumerating: "list all", "what are all", "give me all", "show me all", "name all"
                  * Also: "enumerate", "tell me about each", "describe every", "mention all"
@@ -120,11 +128,12 @@ def analyze_query(question: str, available_documents: List[str] = None, chat_his
                - "list": Questions asking for enumeration (list all, what are, give me names)
                - "timeline": Questions about schedules, dates, deadlines
                - "general": Other informational queries
+               - "chat": Conversational inputs (hi, thanks, etc)
             
             4. **Metadata Filters**:
                Extract filters ONLY for explicit structural attributes like "section: budget" or "type: table".
                Do NOT create metadata filters for content-based terms (project names, people, locations, dates).
-               Return empty filters {{}} unless there's an explicit structural constraint.
+               Return empty filters {} unless there's an explicit structural constraint.
             
             IMPORTANT: When in doubt between exhaustive and semantic, lean towards exhaustive for any query that 
             might require information from multiple documents or sources.
@@ -134,8 +143,8 @@ def analyze_query(question: str, available_documents: List[str] = None, chat_his
                 "sub_questions": [
                     {{
                         "question": "text of sub question with pronouns resolved",
-                        "type": "count|list|timeline|general",
-                        "strategy": "exhaustive|semantic",
+                        "type": "count|list|timeline|general|chat",
+                        "strategy": "exhaustive|semantic|conversational",
                         "filters": {{}}
                     }}
                 ]
