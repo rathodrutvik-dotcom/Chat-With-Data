@@ -64,7 +64,7 @@ const SearchChatsModal = ({ isOpen, onClose }) => {
 
         // Escape regex characters
         const escapeRegExp = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-        const regex = new RegExp(`(${escapeRegExp(highlight)})`, 'gi')
+        const regex = new RegExp(`(${escapeRegExp(highlight)})`, 'i')
         const parts = text.split(regex)
 
         return (
@@ -140,7 +140,21 @@ const SearchChatsModal = ({ isOpen, onClose }) => {
                                 <button
                                     key={`${item.session_id}-${item.timestamp}`}
                                     onClick={() => {
-                                        loadSession(item.session_id, query.trim() || null)
+                                        const trimmedQuery = query.trim()
+                                        loadSession(
+                                            item.session_id,
+                                            trimmedQuery
+                                                ? {
+                                                    query: trimmedQuery,
+                                                    messageTimestamp:
+                                                        item.match_type === 'content'
+                                                            ? item.message_timestamp || item.timestamp
+                                                            : null,
+                                                    snippet: item.match_type === 'content' ? item.snippet : null,
+                                                    matchType: item.match_type,
+                                                }
+                                                : null
+                                        )
                                         onClose()
                                     }}
                                     className="w-full text-left px-4 py-3 hover:bg-gray-50 rounded-lg group transition-all duration-200 flex flex-col border border-transparent hover:border-gray-100"

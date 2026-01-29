@@ -460,7 +460,7 @@ class ChatStorage:
                         "display_name": row[2] if row[2] else row[1],
                         "match_type": "title",
                         "snippet": None,
-                        "timestamp": row[2]
+                        "timestamp": row[3]
                     })
                     
                 # 2. Search Messages
@@ -493,7 +493,8 @@ class ChatStorage:
                             "display_name": row[4] if row[4] else row[3],
                             "match_type": "content",
                             "snippet": snippet,
-                            "timestamp": row[2]
+                            "timestamp": row[2],
+                            "message_timestamp": row[2]
                         })
                 
                 return results

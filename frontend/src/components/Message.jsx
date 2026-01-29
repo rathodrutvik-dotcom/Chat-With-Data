@@ -13,7 +13,7 @@ const Message = forwardRef(({ message, highlightQuery = null }, ref) => {
     if (!highlightQuery || !text) return <span>{text}</span>
 
     const escapeRegExp = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    const regex = new RegExp(`(${escapeRegExp(highlightQuery)})`, 'gi')
+    const regex = new RegExp(`(${escapeRegExp(highlightQuery)})`, 'i')
     const parts = text.split(regex)
 
     return (
@@ -49,10 +49,10 @@ const Message = forwardRef(({ message, highlightQuery = null }, ref) => {
   // System messages (document additions, etc.)
   if (isSystem) {
     return (
-      <div className="flex justify-center my-4 animate-fade-in">
+      <div ref={ref} className="flex justify-center my-4 animate-fade-in">
         <div className="flex items-center gap-2 px-4 py-2 bg-blue-50 border border-blue-200 rounded-full text-sm text-blue-700">
           <FaPaperclip className="w-3 h-3" />
-          <span>{message.content}</span>
+          <span><HighlightText text={message.content} /></span>
         </div>
       </div>
     )
