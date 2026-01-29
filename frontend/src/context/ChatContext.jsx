@@ -239,6 +239,97 @@ export const ChatProvider = ({ children }) => {
     }
   }, [currentSession]);
 
+  // Upload URLs
+  const uploadURLs = useCallback(async (urls) => {
+    try {
+      setUploading(true);
+      setUploadProgress(0);
+      setError(null);
+
+      const result = await chatAPI.uploadURLs(urls, (progress) => {
+        setUploadProgress(progress);
+      });
+
+      // Reload sessions and select the new one
+      await loadSessions();
+      await loadSession(result.session_id);
+      
+      // Add a system message showing the URLs that were added
+      if (result.urls && result.urls.length > 0) {
+        const urlList = result.urls.map(url => `✅ Added url - ${url}`).join(' ');
+        const urlMessage = {
+          role: 'system',
+          content: urlList,
+          timestamp: new Date().toISOString(),
+        };
+        setMessages((prev) => [...prev, urlMessage]);
+      }
+      
+      return result;
+    } catch (err) {
+      console.error('Error uploading URLs:', err);
+      setError(err.message || 'Failed to process URLs');
+      throw err;
+    } finally {
+      setUploading(false);
+      setUploadProgress(0);
+    }
+  }, [loadSessions, loadSession]);
+
+  // Add URLs to existing session
+  const addURLsToSession = useCallback(async (urls) => {
+    if (!currentSession) {
+      setError('No session selected');
+      return;
+    }
+
+    try {
+      setUploading(true);
+      setUploadProgress(0);
+      setError(null);
+
+      const result = await chatAPI.addURLsToSession(
+        currentSession.session_id,
+        urls,
+        (progress) => {
+          setUploadProgress(progress);
+        }
+      );
+
+      // Add system message showing added URLs
+      if (result.urls && result.urls.length > 0) {
+        const urlList = result.urls.map(url => `• ${url}`).join('\\n');
+        const systemMessage = {
+          role: 'system',
+          content: `📎 **Added URLs:**\\n${urlList}`,
+          timestamp: new Date().toISOString(),
+        };
+        setMessages((prev) => [...prev, systemMessage]);
+      } else {
+        // Fallback to generic message
+        const systemMessage = {
+          role: 'system',
+          content: result.message,
+          timestamp: new Date().toISOString(),
+        };
+        setMessages((prev) => [...prev, systemMessage]);
+      }
+
+      // Reload session info to get updated URL list
+      const updatedInfo = await chatAPI.getSessionInfo(currentSession.session_id);
+      setCurrentSession(updatedInfo);
+
+      return result;
+    } catch (err) {
+      console.error('Error adding URLs:', err);
+      setError(err.message || 'Failed to add URLs to session');
+      throw err;
+    } finally {
+      setUploading(false);
+      setUploadProgress(0);
+    }
+  }, [currentSession]);
+
   const value = {
     sessions,
     currentSession,
@@ -253,12 +344,14 @@ export const ChatProvider = ({ children }) => {
     loadSessions,
     loadSession,
     uploadDocuments,
+    uploadURLs,
     sendMessage,
     clearChat,
     deleteSession,
     renameSession,
     newChat,
     addDocumentsToSession,
+    addURLsToSession,
     setError,
   };
 

@@ -19,6 +19,9 @@ openpyxl
 msoffcrypto-tool
 python-docx
 scikit-learn
+beautifulsoup4
+requests
+lxml
 
 # FastAPI Backend for React Frontend
 fastapi==0.109.0

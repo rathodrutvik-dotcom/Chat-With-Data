@@ -104,6 +104,19 @@ const Message = forwardRef(({ message, highlightQuery = null }, ref) => {
                     </code>
                   )
                 },
+                a({ href, children }) {
+                  // Make links open in new tab with proper styling
+                  return (
+                    <a 
+                      href={href} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:text-blue-800 underline font-medium"
+                    >
+                      {children}
+                    </a>
+                  )
+                },
                 p({ children }) {
                   return <p className="mb-2 last:mb-0 leading-relaxed">{wrapWithHighlight(children)}</p>
                 },

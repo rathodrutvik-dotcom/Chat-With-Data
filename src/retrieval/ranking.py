@@ -353,19 +353,21 @@ def format_context_with_metadata(entries):
 
 
 def extract_source_documents(entries) -> list:
-    """Extract unique source document names from context entries.
+    """Extract unique source document names with URLs from context entries.
     
     Args:
         entries: List of context entries with document metadata
         
     Returns:
-        List of unique document names that were used as sources
+        List of dicts with 'name' (display name) and 'url' (source URL if available)
+        For non-URL sources, returns list of strings (backwards compatible)
     """
     if not entries:
         return []
     
     sources = []
     seen = set()
+    has_urls = False
     
     for entry in entries:
         doc = entry.get("doc")
@@ -373,11 +375,32 @@ def extract_source_documents(entries) -> list:
             continue
             
         metadata = doc.metadata or {}
-        doc_name = metadata.get("document_name") or metadata.get("source") or "unknown"
         
-        if doc_name not in seen:
-            seen.add(doc_name)
-            sources.append(doc_name)
+        # Get display name (URL path for web content, filename for docs)
+        display_name = (metadata.get("display_source") or 
+                       metadata.get("source") or 
+                       metadata.get("document_name") or 
+                       "unknown")
+        
+        # Get source URL if available
+        source_url = metadata.get("source_url") or metadata.get("url")
+        
+        # Create unique key to avoid duplicates
+        if source_url:
+            unique_key = f"{display_name}|{source_url}"
+            has_urls = True
+        else:
+            unique_key = display_name
+        
+        if unique_key not in seen:
+            seen.add(unique_key)
+            if source_url:
+                sources.append({
+                    "name": display_name,
+                    "url": source_url
+                })
+            else:
+                sources.append(display_name)
     
     return sources
 

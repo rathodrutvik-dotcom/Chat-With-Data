@@ -1,9 +1,11 @@
-import { FaUpload, FaRocket, FaShieldAlt, FaFileAlt } from 'react-icons/fa'
+import { FaUpload, FaRocket, FaShieldAlt, FaFileAlt, FaGlobe } from 'react-icons/fa'
 import { useState } from 'react'
 import FileUpload from './FileUpload'
+import URLUpload from './URLUpload'
 
 const EmptyState = () => {
   const [showUpload, setShowUpload] = useState(false)
+  const [showURLUpload, setShowURLUpload] = useState(false)
 
   const features = [
     {
@@ -42,14 +44,21 @@ const EmptyState = () => {
             </p>
           </div>
 
-          {/* CTA Button */}
-          <div>
+          {/* CTA Buttons */}
+          <div className="flex items-center justify-center gap-4">
             <button
               onClick={() => setShowUpload(true)}
               className="inline-flex items-center space-x-3 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white px-8 py-4 rounded-xl font-semibold text-lg transition-all transform hover:scale-105 shadow-lg"
             >
               <FaUpload className="w-5 h-5" />
               <span>Upload Documents</span>
+            </button>
+            <button
+              onClick={() => setShowURLUpload(true)}
+              className="inline-flex items-center space-x-3 bg-gradient-to-r from-green-600 to-teal-600 hover:from-green-700 hover:to-teal-700 text-white px-8 py-4 rounded-xl font-semibold text-lg transition-all transform hover:scale-105 shadow-lg"
+            >
+              <FaGlobe className="w-5 h-5" />
+              <span>Add URL</span>
             </button>
           </div>
 
@@ -83,6 +92,7 @@ const EmptyState = () => {
       </div>
 
       {showUpload && <FileUpload onClose={() => setShowUpload(false)} />}
+      {showURLUpload && <URLUpload onClose={() => setShowURLUpload(false)} />}
     </>
   )
 }

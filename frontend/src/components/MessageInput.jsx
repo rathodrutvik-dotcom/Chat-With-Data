@@ -1,13 +1,16 @@
 import { useState, useRef, useEffect } from 'react'
-import { FaArrowUp, FaStop, FaPlus, FaPaperclip } from 'react-icons/fa'
+import { FaArrowUp, FaStop, FaPlus, FaPaperclip, FaUpload, FaGlobe } from 'react-icons/fa'
 import { useChat } from '../context/ChatContext'
+import URLUpload from './URLUpload'
 
 const MessageInput = ({ disabled }) => {
   const { sendMessage, sendingMessage, addDocumentsToSession, uploading, currentSession } = useChat()
   const [input, setInput] = useState('')
-  const [showFileUpload, setShowFileUpload] = useState(false)
+  const [showURLUpload, setShowURLUpload] = useState(false)
+  const [showAddMenu, setShowAddMenu] = useState(false)
   const textareaRef = useRef(null)
   const fileInputRef = useRef(null)
+  const addMenuRef = useRef(null)
 
   // Auto-resize textarea
   useEffect(() => {
@@ -17,6 +20,22 @@ const MessageInput = ({ disabled }) => {
       textarea.style.height = `${Math.min(textarea.scrollHeight, 240)}px`
     }
   }, [input])
+
+  // Close add menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (addMenuRef.current && !addMenuRef.current.contains(event.target)) {
+        setShowAddMenu(false)
+      }
+    }
+
+    if (showAddMenu) {
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside)
+      }
+    }
+  }, [showAddMenu])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -45,7 +64,7 @@ const MessageInput = ({ disabled }) => {
 
     try {
       await addDocumentsToSession(files)
-      setShowFileUpload(false)
+      setShowAddMenu(false)
       // Reset file input
       if (fileInputRef.current) {
         fileInputRef.current.value = ''
@@ -56,9 +75,15 @@ const MessageInput = ({ disabled }) => {
   }
 
   const triggerFileUpload = () => {
+    setShowAddMenu(false)
     if (fileInputRef.current) {
       fileInputRef.current.click()
     }
+  }
+
+  const handleAddURLs = () => {
+    setShowAddMenu(false)
+    setShowURLUpload(true)
   }
 
   return (
@@ -75,21 +100,45 @@ const MessageInput = ({ disabled }) => {
             className="hidden"
           />
           
-          {/* Add documents button - only show when session is active */}
+          {/* Add content button with dropdown menu - only show when session is active */}
           {currentSession && !disabled && (
-            <button
-              type="button"
-              onClick={triggerFileUpload}
-              disabled={uploading || sendingMessage}
-              className={`ml-3 p-2 rounded-full transition-all ${
-                uploading || sendingMessage
-                  ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                  : 'bg-gray-100 hover:bg-gray-200 text-gray-600 hover:text-gray-800'
-              }`}
-              title="Add documents to conversation"
-            >
-              <FaPlus className="w-4 h-4" />
-            </button>
+            <div className="relative ml-3" ref={addMenuRef}>
+              <button
+                type="button"
+                onClick={() => setShowAddMenu(!showAddMenu)}
+                disabled={uploading || sendingMessage}
+                className={`p-2 rounded-full transition-all ${
+                  uploading || sendingMessage
+                    ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                    : 'bg-gray-100 hover:bg-gray-200 text-gray-600 hover:text-gray-800'
+                }`}
+                title="Add content to conversation"
+              >
+                <FaPlus className="w-4 h-4" />
+              </button>
+
+              {/* Dropdown Menu */}
+              {showAddMenu && (
+                <div className="absolute bottom-full left-0 mb-2 bg-white rounded-lg shadow-xl border border-gray-200 overflow-hidden z-10 min-w-[200px]">
+                  <button
+                    type="button"
+                    onClick={triggerFileUpload}
+                    className="w-full flex items-center space-x-3 px-4 py-3 hover:bg-blue-50 text-gray-700 hover:text-blue-700 transition-colors text-left"
+                  >
+                    <FaUpload className="w-4 h-4 text-blue-500" />
+                    <span className="text-sm font-medium">Upload Documents</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleAddURLs}
+                    className="w-full flex items-center space-x-3 px-4 py-3 hover:bg-green-50 text-gray-700 hover:text-green-700 transition-colors text-left border-t border-gray-100"
+                  >
+                    <FaGlobe className="w-4 h-4 text-green-500" />
+                    <span className="text-sm font-medium">Add URLs</span>
+                  </button>
+                </div>
+              )}
+            </div>
           )}
           
           <textarea
@@ -152,11 +201,14 @@ const MessageInput = ({ disabled }) => {
           <div className="mt-2 px-2">
             <div className="flex items-center gap-2 text-sm text-blue-600">
               <FaPaperclip className="animate-pulse" />
-              <span>Adding documents to conversation...</span>
+              <span>Adding content to conversation...</span>
             </div>
           </div>
         )}
       </form>
+
+      {/* URL Upload Modal */}
+      {showURLUpload && <URLUpload onClose={() => setShowURLUpload(false)} />}
     </div>
   )
 }

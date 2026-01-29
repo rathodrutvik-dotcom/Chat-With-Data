@@ -114,6 +114,41 @@ export const chatAPI = {
     return response.data;
   },
 
+  // URL Upload
+  uploadURLs: async (urls, onProgress) => {
+    // Simulate progress for URL upload since it's not multipart
+    if (onProgress) {
+      onProgress(10); // Start at 10%
+    }
+
+    const response = await api.post('/upload-urls', {
+      urls: urls,
+    });
+
+    if (onProgress) {
+      onProgress(100); // Complete
+    }
+
+    return response.data;
+  },
+
+  // Add URLs to existing session
+  addURLsToSession: async (sessionId, urls, onProgress) => {
+    if (onProgress) {
+      onProgress(10);
+    }
+
+    const response = await api.post(`/sessions/${sessionId}/urls`, {
+      urls: urls,
+    });
+
+    if (onProgress) {
+      onProgress(100);
+    }
+
+    return response.data;
+  },
+
   // Chat
   sendMessage: async (sessionId, message) => {
     const response = await api.post('/chat', {

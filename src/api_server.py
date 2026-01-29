@@ -11,7 +11,7 @@ import logging
 import tempfile
 from pathlib import Path
 from config.settings import DATA_DIR
-from typing import List, Optional
+from typing import List, Optional, Union, Dict
 from datetime import datetime
 
 from fastapi import FastAPI, File, UploadFile, HTTPException, Request
@@ -21,7 +21,13 @@ from pydantic import BaseModel
 from dotenv import load_dotenv
 
 from models.session_manager import get_session_manager
-from rag.pipeline import process_user_question, proceed_input, add_documents_to_existing_session
+from rag.pipeline import (
+    process_user_question, 
+    proceed_input, 
+    proceed_input_urls,
+    add_documents_to_existing_session,
+    add_urls_to_existing_session
+)
 
 # Load environment variables
 load_dotenv()
@@ -73,7 +79,7 @@ class ChatResponse(BaseModel):
     """Response model for chat endpoint."""
     role: str
     content: str
-    sources: Optional[List[str]] = None
+    sources: Optional[List[Union[str, Dict[str, str]]]] = None  # Support both strings and structured sources
     timestamp: str
 
 
@@ -92,6 +98,7 @@ class SessionCreate(BaseModel):
     collection_name: str
     message: str
     documents: List[str]
+    urls: Optional[List[str]] = None  # URLs added for URL-based sessions
 
 
 class MessageHistory(BaseModel):
@@ -99,6 +106,16 @@ class MessageHistory(BaseModel):
     role: str
     content: str
     timestamp: Optional[str] = None
+
+
+class URLUploadRequest(BaseModel):
+    """Request model for URL upload."""
+    urls: List[str]
+
+
+class URLListRequest(BaseModel):
+    """Request model for adding URLs to existing session."""
+    urls: List[str]
 
 
 # API Endpoints
@@ -374,6 +391,10 @@ async def chat(request: ChatRequest):
             answer = str(response_data)
             sources = []
 
+        # NOTE: Sources are already included in the answer text by the system prompt
+        # (it adds "Sources: file.pdf" at the end). We only return them in the response
+        # for frontend metadata, not appending to answer to avoid duplication.
+
         # Save assistant response
         session_manager.save_message(session_id, "assistant", answer)
 
@@ -513,6 +534,105 @@ async def add_documents_to_session(session_id: str, files: List[UploadFile] = Fi
                 logging.info(f"Cleaned up temporary directory: {temp_dir}")
             except Exception as e:
                 logging.warning(f"Could not clean up temp directory {temp_dir}: {e}")
+
+
+@app.post("/api/upload-urls", response_model=SessionCreate)
+async def upload_urls(request: URLUploadRequest):
+    """
+    Process URLs to create a new chat session.
+    Crawls each URL and follows navigation links (up to 10 pages per URL).
+    """
+    try:
+        if not request.urls:
+            raise HTTPException(status_code=400, detail="No URLs provided")
+
+        # Clean URLs
+        cleaned_urls = [url.strip() for url in request.urls if url.strip()]
+        if not cleaned_urls:
+            raise HTTPException(status_code=400, detail="No valid URLs provided")
+
+        logging.info(f"Processing {len(cleaned_urls)} URL(s)")
+
+        # Process URLs using pipeline
+        result = proceed_input_urls(cleaned_urls)
+
+        # Create session
+        session_id = session_manager.create_session(
+            result.rag_session,
+            result.document_name,
+            result.collection_name,
+            result.original_filenames  # URLs
+        )
+
+        logging.info(f"Created URL-based session {session_id}: {result.document_name}")
+
+        return {
+            "session_id": session_id,
+            "document_name": result.document_name,
+            "collection_name": result.collection_name,
+            "message": f"URLs processed successfully: {result.document_name}",
+            "documents": result.original_filenames,  # Return URLs
+            "urls": result.original_filenames  # Also in urls field for clarity
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error processing URLs: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error processing URLs: {str(e)}")
+
+
+@app.post("/api/sessions/{session_id}/urls")
+async def add_urls_to_session(session_id: str, request: URLListRequest):
+    """
+    Add URLs to an existing chat session (mid-chat URL addition).
+    """
+    try:
+        if not request.urls:
+            raise HTTPException(status_code=400, detail="No URLs provided")
+
+        # Clean URLs
+        cleaned_urls = [url.strip() for url in request.urls if url.strip()]
+        if not cleaned_urls:
+            raise HTTPException(status_code=400, detail="No valid URLs provided")
+
+        logging.info(f"Adding {len(cleaned_urls)} URL(s) to session {session_id}")
+
+        # Process and add URLs to existing session
+        result = add_urls_to_existing_session(
+            url_list=cleaned_urls,
+            session_id=session_id,
+            session_manager=session_manager
+        )
+
+        if not result["success"]:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to add URLs: {result.get('message', 'Unknown error')}"
+            )
+
+        # Add system message to chat history
+        urls_list = ", ".join(result["urls"])
+        system_message = f"Added {len(result['urls'])} URL(s) to conversation: {urls_list}"
+        session_manager.save_message(session_id, "system", system_message)
+
+        logging.info(f"Successfully added URLs to session {session_id}: {urls_list}")
+
+        return {
+            "message": result["message"],
+            "session_id": session_id,
+            "urls": result["urls"],
+            "count": len(result["urls"])
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error adding URLs to session {session_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error adding URLs: {str(e)}. Your chat session is still active."
+        )
 
 
 # Error handlers

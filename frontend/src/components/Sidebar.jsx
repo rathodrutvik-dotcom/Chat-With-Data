@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
-import { FaPlus, FaTimes, FaTrash, FaFile, FaComments, FaEllipsisV, FaPencilAlt, FaBroom, FaBars, FaSearch } from 'react-icons/fa'
+import { FaPlus, FaTimes, FaTrash, FaFile, FaComments, FaEllipsisV, FaPencilAlt, FaBroom, FaBars, FaSearch, FaUpload, FaGlobe, FaChevronDown } from 'react-icons/fa'
 import { useChat } from '../context/ChatContext'
 import FileUpload from './FileUpload'
+import URLUpload from './URLUpload'
 import SearchChatsModal from './SearchChatsModal'
 import ConfirmModal from './ConfirmModal'
 import { formatDistanceToNow } from 'date-fns'
@@ -10,13 +11,16 @@ const Sidebar = ({ isOpen, onClose }) => {
 
   const { sessions, currentSession, loadSession, deleteSession, renameSession, newChat, clearChat } = useChat()
   const [showUpload, setShowUpload] = useState(false)
+  const [showURLUpload, setShowURLUpload] = useState(false)
   const [showSearch, setShowSearch] = useState(false)
+  const [showNewChatDropdown, setShowNewChatDropdown] = useState(false)
   const [openMenuId, setOpenMenuId] = useState(null)
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, sessionId: null })
   const [clearChatModal, setClearChatModal] = useState({ isOpen: false, sessionId: null })
   const [renameModal, setRenameModal] = useState({ isOpen: false, sessionId: null, currentName: '' })
   const [renameName, setRenameName] = useState('')
   const menuRef = useRef(null)
+  const newChatDropdownRef = useRef(null)
 
   // Hotkey for search
   useEffect(() => {
@@ -36,15 +40,18 @@ const Sidebar = ({ isOpen, onClose }) => {
       if (menuRef.current && !menuRef.current.contains(event.target)) {
         setOpenMenuId(null)
       }
+      if (newChatDropdownRef.current && !newChatDropdownRef.current.contains(event.target)) {
+        setShowNewChatDropdown(false)
+      }
     }
 
-    if (openMenuId !== null) {
+    if (openMenuId !== null || showNewChatDropdown) {
       document.addEventListener('mousedown', handleClickOutside)
       return () => {
         document.removeEventListener('mousedown', handleClickOutside)
       }
     }
-  }, [openMenuId])
+  }, [openMenuId, showNewChatDropdown])
 
   const handleSessionClick = (session) => {
     loadSession(session.session_id)
@@ -103,7 +110,14 @@ const Sidebar = ({ isOpen, onClose }) => {
 
   const handleNewChat = () => {
     newChat()
+    setShowNewChatDropdown(false)
     setShowUpload(true)
+  }
+
+  const handleNewURLChat = () => {
+    newChat()
+    setShowNewChatDropdown(false)
+    setShowURLUpload(true)
   }
 
   return (
@@ -171,13 +185,38 @@ const Sidebar = ({ isOpen, onClose }) => {
           <div className="p-4 border-b border-gray-700">
             {/* New chat button and toggle button row */}
             <div className="flex items-center justify-between mb-2">
-              <button
-                onClick={handleNewChat}
-                className="flex items-center space-x-3 text-gray-300 hover:bg-gray-800 px-3 py-2.5 rounded-lg font-normal transition-colors flex-1 mr-2 justify-start"
-              >
-                <FaPencilAlt className="w-4 h-4" />
-                <span className="text-sm">New chat</span>
-              </button>
+              <div className="relative flex-1 mr-2" ref={newChatDropdownRef}>
+                <button
+                  onClick={() => setShowNewChatDropdown(!showNewChatDropdown)}
+                  className="flex items-center justify-between text-gray-300 hover:bg-gray-800 px-3 py-2.5 rounded-lg font-normal transition-colors w-full"
+                >
+                  <div className="flex items-center space-x-3">
+                    <FaPencilAlt className="w-4 h-4" />
+                    <span className="text-sm">New chat</span>
+                  </div>
+                  <FaChevronDown className={`w-3 h-3 transition-transform ${showNewChatDropdown ? 'rotate-180' : ''}`} />
+                </button>
+
+                {/* Dropdown Menu */}
+                {showNewChatDropdown && (
+                  <div className="absolute top-full left-0 mt-1 w-full bg-gray-800 rounded-lg shadow-lg border border-gray-700 overflow-hidden z-10">
+                    <button
+                      onClick={handleNewChat}
+                      className="w-full flex items-center space-x-3 px-3 py-2.5 hover:bg-gray-700 text-gray-300 transition-colors text-left"
+                    >
+                      <FaUpload className="w-4 h-4 text-blue-400" />
+                      <span className="text-sm">Upload Documents</span>
+                    </button>
+                    <button
+                      onClick={handleNewURLChat}
+                      className="w-full flex items-center space-x-3 px-3 py-2.5 hover:bg-gray-700 text-gray-300 transition-colors text-left"
+                    >
+                      <FaGlobe className="w-4 h-4 text-green-400" />
+                      <span className="text-sm">Add URL</span>
+                    </button>
+                  </div>
+                )}
+              </div>
 
               {/* Toggle button */}
               <button
@@ -357,6 +396,12 @@ const Sidebar = ({ isOpen, onClose }) => {
         isOpen={showSearch}
         onClose={() => setShowSearch(false)}
       />
+
+      {/* File Upload Modal */}
+      {showUpload && <FileUpload onClose={() => setShowUpload(false)} />}
+      
+      {/* URL Upload Modal */}
+      {showURLUpload && <URLUpload onClose={() => setShowURLUpload(false)} />}
     </>
   )
 }

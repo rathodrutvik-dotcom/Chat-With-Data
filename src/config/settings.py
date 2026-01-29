@@ -82,6 +82,12 @@ CHAT_SNIPPET_MAX_CHARS = 160
 
 CROSS_ENCODER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 
+# URL Scraping Configuration
+URL_TIMEOUT = 3  # seconds - timeout for fetching each URL
+ENABLE_CRAWLING = False  # Set to True to enable multi-page crawling, False for single page only
+MAX_PAGES_PER_URL = 10  # Maximum pages to crawl per URL (only used if ENABLE_CRAWLING=True)
+USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+
 # LLM Provider Configuration
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
 
@@ -116,4 +122,8 @@ __all__ = [
     "CROSS_ENCODER_MODEL",
     "GEMINI_MODEL",
     "embedding_model",
+    "URL_TIMEOUT",
+    "ENABLE_CRAWLING",
+    "MAX_PAGES_PER_URL",
+    "USER_AGENT",
 ]

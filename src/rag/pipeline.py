@@ -20,6 +20,7 @@ from config.settings import (
 from ingestion.chunking import get_document_chunks
 from ingestion.files import validate_and_save_files
 from ingestion.loaders import load_docs
+from ingestion.urls import validate_and_fetch_urls
 from models.session import RagSession, PipelineResult
 from prompts.system_prompt import read_system_prompt
 from retrieval.query_rewrite import generate_query_variations, rewrite_query
@@ -838,11 +839,142 @@ def add_documents_to_existing_session(uploaded_files, session_id: str, session_m
         raise
 
 
+def proceed_input_urls(url_list: list):
+    """Main function to process URLs into a RAG chain.
+    
+    Args:
+        url_list: List of URLs to crawl and process
+        
+    Returns:
+        PipelineResult containing the RAG session and metadata
+    """
+    try:
+        # Fetch and save URL content
+        saved_files, collection_name, document_name, original_urls, pages_metadata = validate_and_fetch_urls(url_list)
+        
+        logging.info("Fetched content from %d URLs, saved %d HTML files", 
+                    len(original_urls), len(saved_files))
+        
+        # Load documents (HTML files with metadata)
+        docs = load_docs(saved_files, original_filenames=[page['title'] for page in pages_metadata])
+        logging.info("Loaded %d documents from URLs", len(docs))
+        
+        if not docs:
+            raise gr.Error("❌ No content to process from URLs.")
+        
+        # Chunk documents (same as file processing)
+        splits = get_document_chunks(docs)
+        logging.info("Created %d chunks from URL content", len(splits))
+        
+        # Create vector store
+        vectorstore = get_vector_store(splits, collection_name=collection_name)
+        
+        # Build sparse index for hybrid retrieval
+        sparse_index = SparseIndex(splits)
+        
+        # Load system prompt
+        system_prompt = read_system_prompt("custom.yaml")
+        
+        # Create RAG session
+        rag_session = RagSession(
+            rag_chain=build_rag_chain(system_prompt),
+            vectorstore=vectorstore,
+            sparse_index=sparse_index,
+        )
+        
+        logging.info("URL-based RAG chain built successfully")
+        
+        return PipelineResult(
+            rag_session=rag_session,
+            collection_name=collection_name,
+            document_name=document_name,
+            original_filenames=original_urls  # Store URLs as "filenames"
+        )
+        
+    except gr.Error:
+        raise
+    except Exception as exc:
+        logging.error("Error in proceed_input_urls: %s", str(exc))
+        raise gr.Error(f"❌ Error processing URLs: {str(exc)}") from exc
+
+
+def add_urls_to_existing_session(url_list: list, session_id: str, session_manager):
+    """Add URLs to an existing chat session (mid-chat URL addition).
+    
+    Args:
+        url_list: List of URLs to add
+        session_id: ID of the session to add URLs to
+        session_manager: SessionManager instance
+        
+    Returns:
+        Dictionary with success status, message, and urls
+    """
+    try:
+        # Get the existing session
+        session = session_manager.get_session(session_id)
+        if not session:
+            raise ValueError(f"Session {session_id} not found")
+        
+        logging.info("Adding %d URL(s) to session %s", len(url_list), session_id)
+        
+        # Fetch URL content with existing collection name
+        # We'll append to the same collection but with new page numbers
+        existing_metadata = session_manager.storage.get_session_metadata(session_id)
+        collection_name = existing_metadata.get('collection_name', 'urls')
+        
+        # Use a temporary unique prefix for these new URLs
+        from datetime import datetime
+        from config.settings import IST
+        timestamp = datetime.now(IST).strftime('%Y%m%d_%H%M%S')
+        temp_collection = f"{collection_name}_add_{timestamp}"
+        
+        # Fetch URL content
+        saved_files, _, _, original_urls, pages_metadata = validate_and_fetch_urls(url_list)
+        
+        # Load documents
+        docs = load_docs(saved_files, original_filenames=[page['title'] for page in pages_metadata])
+        
+        if not docs:
+            raise ValueError("No content extracted from URLs")
+        
+        logging.info("Loaded %d documents from new URLs", len(docs))
+        
+        # Chunk the documents
+        splits = get_document_chunks(docs)
+        logging.info("Created %d chunks from new URL content", len(splits))
+        
+        # Add to session using SessionManager
+        success = session_manager.add_documents_to_session(
+            session_id=session_id,
+            new_docs=splits,
+            new_original_filenames=original_urls
+        )
+        
+        if not success:
+            raise Exception("Failed to add URLs to session")
+        
+        # Format URL list for display
+        url_display = ", ".join(original_urls)
+        message = f"Successfully added {len(original_urls)} URL(s): {url_display}"
+        
+        return {
+            "success": True,
+            "message": message,
+            "urls": original_urls
+        }
+        
+    except Exception as e:
+        logging.error("Error adding URLs to session %s: %s", session_id, e, exc_info=True)
+        raise
+
+
 __all__ = [
     "format_chat_history",
     "build_rag_chain",
     "retrieve_relevant_chunks",
     "proceed_input",
+    "proceed_input_urls",
     "process_user_question",
     "add_documents_to_existing_session",
+    "add_urls_to_existing_session",
 ]
